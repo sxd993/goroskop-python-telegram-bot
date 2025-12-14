@@ -3,30 +3,26 @@ from pathlib import Path
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
-from aiogram.types import (
-    CallbackQuery,
-    LabeledPrice,
-    Message,
-    Optional,
-    PreCheckoutQuery,
-)
+from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
 
-import catalog
-import db
-from config import Settings
-from const import MONTH_NAMES_RU, SIGNS_RU
-from utils import (
+from app.config import Settings, SIGNS_RU
+from app.keyboards.navigation import (
     build_months_keyboard,
     build_pay_keyboard,
     build_signs_keyboard,
     build_years_keyboard,
+)
+from app.models import Order
+from app.services import db, media
+from app.services.messaging import send_content
+from app.services.parsing import (
     parse_month_data,
     parse_pay_data,
     parse_product,
     parse_sign_data,
     parse_year_data,
-    send_content,
 )
+from app import texts
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +31,12 @@ router = Router()
 _settings: Settings | None = None
 
 
-def setup(settings: Settings) -> None:
-    """Configure handlers with shared settings instance."""
+def setup_handlers(settings: Settings) -> None:
     global _settings
     _settings = settings
 
 
-def get_settings(bot: Bot):
+def get_settings(bot: Bot) -> Settings:
     if _settings is None:
         raise RuntimeError("Handlers are not configured with settings")
     return _settings
@@ -54,12 +49,12 @@ def get_db_path(bot: Bot) -> Path:
 @router.message(Command("start"))
 async def handle_start(message: Message):
     settings = get_settings(message.bot)
-    years = catalog.available_years(settings.media_dir)
+    years = media.available_years(settings.media_dir)
     if not years:
-        await message.answer("Контент пока не готов. Загляни позже.")
+        await message.answer(texts.no_content())
         return
     keyboard = build_years_keyboard(years)
-    await message.answer("Выбери год:", reply_markup=keyboard)
+    await message.answer(texts.choose_year(), reply_markup=keyboard)
 
 
 @router.callback_query(F.data.startswith("year:"))
@@ -67,19 +62,19 @@ async def handle_year(callback: CallbackQuery):
     year = parse_year_data(callback.data or "")
     await callback.answer()
     if not year:
-        await callback.message.answer("Некорректный год.")
+        await callback.message.answer(texts.invalid_year())
         return
     settings = get_settings(callback.bot)
-    years = catalog.available_years(settings.media_dir)
+    years = media.available_years(settings.media_dir)
     if year not in years:
-        await callback.message.answer("Этот год недоступен.")
+        await callback.message.answer(texts.year_unavailable())
         return
-    months = catalog.months_for_year(settings.media_dir, year)
+    months = media.months_for_year(settings.media_dir, year)
     if not months:
-        await callback.message.answer("Месяцы для этого года не найдены.")
+        await callback.message.answer(texts.months_missing())
         return
     keyboard = build_months_keyboard(settings.media_dir, year)
-    await callback.message.answer(f"Год {year}. Выбери месяц:", reply_markup=keyboard)
+    await callback.message.answer(texts.year_prompt(year), reply_markup=keyboard)
 
 
 @router.callback_query(F.data.startswith("month:"))
@@ -87,26 +82,24 @@ async def handle_month(callback: CallbackQuery):
     ym = parse_month_data(callback.data or "")
     await callback.answer()
     if not ym:
-        await callback.message.answer("Некорректный месяц.")
+        await callback.message.answer(texts.invalid_month())
         return
     year = ym.split("-")[0]
     settings = get_settings(callback.bot)
     media_dir = settings.media_dir
-    if year not in catalog.available_years(media_dir):
-        await callback.message.answer("Этот год недоступен.")
+    if year not in media.available_years(media_dir):
+        await callback.message.answer(texts.year_unavailable())
         return
-    if ym not in catalog.months_for_year(media_dir, year):
-        await callback.message.answer("Этот месяц недоступен.")
+    if ym not in media.months_for_year(media_dir, year):
+        await callback.message.answer(texts.month_unavailable())
         return
-    signs = catalog.available_signs(media_dir, ym)
+    signs = media.available_signs(media_dir, ym)
     if not signs:
-        await callback.message.answer("Контент для этого месяца пока не готов.")
+        await callback.message.answer(texts.month_content_missing())
         return
     keyboard = build_signs_keyboard(media_dir, ym)
-    month_name = catalog.month_name_from_ym(ym) or "Месяц"
-    await callback.message.answer(
-        f"{month_name} {year}. Выбери знак:", reply_markup=keyboard
-    )
+    month_name = media.month_name_from_ym(ym) or "Месяц"
+    await callback.message.answer(texts.month_prompt(month_name, year), reply_markup=keyboard)
 
 
 @router.callback_query(F.data.startswith("sign:"))
@@ -114,28 +107,28 @@ async def handle_sign(callback: CallbackQuery):
     parsed = parse_sign_data(callback.data or "")
     await callback.answer()
     if not parsed:
-        await callback.message.answer("Некорректный выбор.")
+        await callback.message.answer(texts.invalid_sign())
         return
     ym, sign = parsed
     year = ym.split("-")[0]
     settings = get_settings(callback.bot)
     media_dir = settings.media_dir
-    if year not in catalog.available_years(media_dir):
-        await callback.message.answer("Этот год недоступен.")
+    if year not in media.available_years(media_dir):
+        await callback.message.answer(texts.year_unavailable())
         return
-    if ym not in catalog.months_for_year(media_dir, year):
-        await callback.message.answer("Этот месяц недоступен.")
+    if ym not in media.months_for_year(media_dir, year):
+        await callback.message.answer(texts.month_unavailable())
         return
-    if sign not in catalog.available_signs(media_dir, ym):
-        await callback.message.answer("Этот знак недоступен.")
+    if sign not in media.available_signs(media_dir, ym):
+        await callback.message.answer(texts.sign_unavailable())
         return
-    content_path = catalog.find_content_path(media_dir, ym, sign)
+    content_path = media.find_content_path(media_dir, ym, sign)
     if not content_path:
-        await callback.message.answer("Контент для выбранного месяца пока не готов.")
+        await callback.message.answer(texts.content_missing())
         return
-    product_id = catalog.build_product_id(ym, sign)
+    product_id = media.build_product_id(ym, sign)
     if not product_id:
-        await callback.message.answer("Некорректный товар.")
+        await callback.message.answer(texts.invalid_product())
         return
     order = await db.create_order(
         settings.db_path,
@@ -145,31 +138,20 @@ async def handle_sign(callback: CallbackQuery):
         settings.currency,
     )
     logger.info("Order created user=%s order_id=%s", callback.from_user.id, order["id"])
-    month_name = catalog.month_name_from_ym(ym) or ym
-    sign_name = SIGNS_RU.get(sign, sign)
+    month_name = media.month_name_from_ym(ym) or ym
     price_rub = settings.price_kopeks / 100
-    text = f"{month_name} {ym.split('-')[0]}, {sign_name}. Цена {price_rub:.0f} ₽"
+    text = texts.price_caption(month_name, ym.split("-")[0], sign, price_rub)
     await callback.message.answer(text, reply_markup=build_pay_keyboard(order["id"]))
 
 
-def parse_product(product_id: str) -> Optional[tuple[str, str]]:
-    parts = product_id.split(":")
-    if len(parts) != 2:
-        return None
-    ym, sign = parts
-    if not catalog.parse_year_month(ym) or sign not in SIGNS_RU:
-        return None
-    return ym, sign
-
-
-async def send_invoice(callback: CallbackQuery, order: dict) -> None:
+async def send_invoice(callback: CallbackQuery, order: Order) -> None:
     settings = get_settings(callback.bot)
     parsed = parse_product(order["product_id"])
     if not parsed:
-        await callback.message.answer("Некорректный товар.")
+        await callback.message.answer(texts.invalid_product())
         return
     ym, sign = parsed
-    month_name = catalog.month_name_from_ym(ym) or ym
+    month_name = media.month_name_from_ym(ym) or ym
     sign_name = SIGNS_RU.get(sign, sign)
     title = f"{month_name} {ym.split('-')[0]}"
     description = f"Гороскоп для знака {sign_name}"
@@ -191,30 +173,28 @@ async def handle_pay(callback: CallbackQuery):
     order_id = parse_pay_data(callback.data or "")
     await callback.answer()
     if not order_id:
-        await callback.message.answer("Некорректный заказ.")
+        await callback.message.answer(texts.invalid_order())
         return
     settings = get_settings(callback.bot)
     order = await db.get_order(settings.db_path, order_id)
     if not order or order["user_id"] != callback.from_user.id:
-        await callback.message.answer("Заказ не найден.")
+        await callback.message.answer(texts.order_not_found())
         return
     parsed = parse_product(order["product_id"])
     if not parsed:
-        await callback.message.answer("Некорректный товар.")
+        await callback.message.answer(texts.invalid_product())
         return
     ym, sign = parsed
     media_dir = settings.media_dir
-    if ym not in catalog.months_for_year(
-        media_dir, ym.split("-")[0]
-    ) or sign not in catalog.available_signs(media_dir, ym):
-        await callback.message.answer("Контент для выбранного месяца пока не готов.")
+    if ym not in media.months_for_year(media_dir, ym.split("-")[0]) or sign not in media.available_signs(media_dir, ym):
+        await callback.message.answer(texts.content_missing())
         return
-    content_path = catalog.find_content_path(media_dir, ym, sign)
+    content_path = media.find_content_path(media_dir, ym, sign)
     if not content_path:
-        await callback.message.answer("Контент для выбранного месяца пока не готов.")
+        await callback.message.answer(texts.content_missing())
         return
     if order["status"] == "paid":
-        await callback.message.answer("Заказ уже оплачен, отправляю файл.")
+        await callback.message.answer(texts.order_paid_message())
         await deliver_file(callback.bot, callback.message.chat.id, order, content_path)
         return
     await send_invoice(callback, order)
@@ -226,23 +206,19 @@ async def handle_pre_checkout(query: PreCheckoutQuery):
     order = await db.get_order(settings.db_path, query.invoice_payload)
     if not order or order["user_id"] != query.from_user.id or order["status"] == "paid":
         await query.answer(ok=False, error_message="Заказ недоступен.")
-        logger.info(
-            "Pre-checkout rejected user=%s order_id=%s",
-            query.from_user.id,
-            query.invoice_payload,
-        )
+        logger.info("Pre-checkout rejected user=%s order_id=%s", query.from_user.id, query.invoice_payload)
         return
     await query.answer(ok=True)
     logger.info("Pre-checkout ok user=%s order_id=%s", query.from_user.id, order["id"])
 
 
-async def deliver_file(bot: Bot, chat_id: int, order: dict, content_path: Path) -> None:
+async def deliver_file(bot: Bot, chat_id: int, order: Order, content_path: Path) -> None:
     parsed = parse_product(order["product_id"])
     if not parsed:
-        await bot.send_message(chat_id, "Не удалось отправить файл.")
+        await bot.send_message(chat_id, texts.invalid_product())
         return
     ym, sign = parsed
-    month_name = catalog.month_name_from_ym(ym) or ym
+    month_name = media.month_name_from_ym(ym) or ym
     sign_name = SIGNS_RU.get(sign, sign)
     caption = f"{month_name} {ym.split('-')[0]}, {sign_name}"
     delivered = await send_content(bot, chat_id, content_path, caption)
@@ -258,12 +234,10 @@ async def handle_successful_payment(message: Message):
     settings = get_settings(message.bot)
     order = await db.get_order(settings.db_path, order_id)
     if not order or order["user_id"] != message.from_user.id:
-        await message.answer("Заказ не найден.")
+        await message.answer(texts.order_not_found())
         return
     try:
-        await db.mark_paid(
-            settings.db_path, order_id, payment.telegram_payment_charge_id
-        )
+        await db.mark_paid(settings.db_path, order_id, payment.telegram_payment_charge_id)
         logger.info(
             "Payment successful user=%s order_id=%s charge_id=%s",
             message.from_user.id,
@@ -274,11 +248,11 @@ async def handle_successful_payment(message: Message):
         logger.exception("Failed to mark paid order_id=%s", order_id)
     parsed = parse_product(order["product_id"])
     if not parsed:
-        await message.answer("Не удалось определить товар.")
+        await message.answer(texts.invalid_product())
         return
     ym, sign = parsed
-    content_path = catalog.find_content_path(settings.media_dir, ym, sign)
+    content_path = media.find_content_path(settings.media_dir, ym, sign)
     if not content_path:
-        await message.answer("Файл не найден. Напиши нам, мы вернем оплату.")
+        await message.answer(texts.file_missing_after_pay())
         return
     await deliver_file(message.bot, message.chat.id, order, content_path)

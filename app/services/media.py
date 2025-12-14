@@ -2,7 +2,10 @@ import re
 from pathlib import Path
 from typing import List, Optional
 
-from const import ALLOWED_EXTENSIONS, MONTH_NAMES_RU, SIGNS_RU, YEAR_MONTH_PATTERN
+from app.config import ALLOWED_EXTENSIONS, MONTH_NAMES_RU, SIGNS_RU, YEAR_MONTH_PATTERN
+
+
+_YEAR_MONTH_REGEX = re.compile(YEAR_MONTH_PATTERN)
 
 
 def is_valid_year(value: str) -> bool:
@@ -10,7 +13,7 @@ def is_valid_year(value: str) -> bool:
 
 
 def parse_year_month(value: str) -> Optional[re.Match]:
-    match = YEAR_MONTH_PATTERN.fullmatch(value)
+    match = _YEAR_MONTH_REGEX.fullmatch(value)
     if not match:
         return None
     month = int(match.group("month"))

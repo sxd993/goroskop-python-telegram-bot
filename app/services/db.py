@@ -1,9 +1,11 @@
 import datetime as dt
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import aiosqlite
+
+from app.models import Order
 
 
 CREATE_TABLE_SQL = """
@@ -39,7 +41,7 @@ async def create_order(
     product_id: str,
     amount_kopeks: int,
     currency: str,
-) -> Dict[str, Any]:
+) -> Order:
     order_id = str(uuid.uuid4())
     created_at = _now_iso()
     async with aiosqlite.connect(db_path) as db:
@@ -65,12 +67,12 @@ async def create_order(
     }
 
 
-async def get_order(db_path: Path, order_id: str) -> Optional[Dict[str, Any]]:
+async def get_order(db_path: Path, order_id: str) -> Optional[Order]:
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)) as cursor:
             row = await cursor.fetchone()
-            return dict(row) if row else None
+            return Order(dict(row)) if row else None
 
 
 async def update_status(db_path: Path, order_id: str, status: str) -> None:

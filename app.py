@@ -4,9 +4,9 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 
-import handlers
-from config import load_settings
-from db import init_db
+from app.config import load_settings
+from app.handlers.navigation import router as navigation_router, setup_handlers
+from app.services.db import init_db
 
 
 async def main() -> None:
@@ -15,10 +15,10 @@ async def main() -> None:
     await init_db(settings.db_path)
 
     bot = Bot(token=settings.bot_token, parse_mode=ParseMode.HTML)
-    handlers.setup(settings)
+    setup_handlers(settings)
 
     dp = Dispatcher()
-    dp.include_router(handlers.router)
+    dp.include_router(navigation_router)
 
     await dp.start_polling(bot)
 
