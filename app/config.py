@@ -3,6 +3,7 @@ from typing import Dict, List
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
 
 # === Константы и словари ===
 YEAR_MONTH_PATTERN = r"^(?P<year>\d{4})-(?P<month>\d{2})$"
@@ -48,7 +49,11 @@ class Settings(BaseSettings):
     db_path: Path = Field(Path("data/bot.sqlite3"), alias="DB_PATH")
     admin_ids: List[int] = Field(default_factory=list, alias="ADMIN_IDS")
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="", case_sensitive=True)
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="",
+        case_sensitive=True,
+    )
 
     @field_validator("admin_ids", mode="before")
     @classmethod
@@ -63,6 +68,34 @@ class Settings(BaseSettings):
         if isinstance(value, (list, tuple, set)):
             return [int(item) for item in value]
         raise TypeError("ADMIN_IDS must be a comma-separated list or array of integers")
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,  # type: ignore[override]
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        """
+        Keep raw env strings for complex fields (e.g., ADMIN_IDS="1,2,3") by bypassing JSON parsing.
+        """
+
+        class _NoJsonEnvSource(EnvSettingsSource):
+            def decode_complex_value(self, field_name, field, value):
+                return value
+
+        class _NoJsonDotEnvSource(DotEnvSettingsSource):
+            def decode_complex_value(self, field_name, field, value):
+                return value
+
+        return (
+            init_settings,
+            _NoJsonEnvSource(settings_cls),
+            _NoJsonDotEnvSource(settings_cls),
+            file_secret_settings,
+        )
 
 
 def load_settings() -> Settings:

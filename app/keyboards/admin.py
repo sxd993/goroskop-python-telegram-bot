@@ -13,6 +13,14 @@ def build_admin_menu() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def build_admin_type_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Годовой", callback_data="admin-type:year")
+    builder.button(text="Месячный", callback_data="admin-type:month")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
 def build_admin_months_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for month, name in MONTH_NAMES_RU.items():

@@ -14,6 +14,7 @@ from app.keyboards.admin import (
     ADMIN_ADD_FORECAST_CALLBACK,
     build_admin_menu,
     build_admin_months_keyboard,
+    build_admin_type_keyboard,
     build_admin_signs_keyboard,
 )
 from app.services import media
@@ -26,6 +27,7 @@ _settings: Settings | None = None
 
 
 class AdminUpload(StatesGroup):
+    kind = State()
     year = State()
     month = State()
     sign = State()
@@ -64,6 +66,22 @@ async def handle_admin_add(callback: CallbackQuery, state: FSMContext):
         await callback.answer(texts.admin_forbidden(), show_alert=True)
         return
     await state.clear()
+    await state.set_state(AdminUpload.kind)
+    await callback.answer()
+    await callback.message.answer(texts.admin_choose_type(), reply_markup=build_admin_type_keyboard())
+
+
+@router.callback_query(AdminUpload.kind, F.data.startswith("admin-type:"))
+async def handle_admin_type(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await state.clear()
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    kind = (callback.data or "").split(":", maxsplit=1)[-1]
+    if kind not in {"year", "month"}:
+        await callback.answer(texts.admin_invalid_type(), show_alert=True)
+        return
+    await state.update_data(kind=kind)
     await state.set_state(AdminUpload.year)
     await callback.answer()
     await callback.message.answer(texts.admin_prompt_year())
@@ -75,6 +93,12 @@ async def handle_admin_year(message: Message, state: FSMContext):
         await state.clear()
         await message.answer(texts.admin_forbidden())
         return
+    data = await state.get_data()
+    kind = data.get("kind")
+    if kind not in {"year", "month"}:
+        await state.clear()
+        await message.answer(texts.admin_session_reset())
+        return
     if not message.text:
         await message.answer(texts.admin_invalid_year())
         return
@@ -83,8 +107,12 @@ async def handle_admin_year(message: Message, state: FSMContext):
         await message.answer(texts.admin_invalid_year())
         return
     await state.update_data(year=year)
-    await state.set_state(AdminUpload.month)
-    await message.answer(texts.admin_choose_month(year), reply_markup=build_admin_months_keyboard())
+    if kind == "year":
+        await state.set_state(AdminUpload.sign)
+        await message.answer(texts.admin_choose_sign_year(year), reply_markup=build_admin_signs_keyboard())
+    else:
+        await state.set_state(AdminUpload.month)
+        await message.answer(texts.admin_choose_month(year), reply_markup=build_admin_months_keyboard())
 
 
 @router.callback_query(AdminUpload.month, F.data.startswith("admin-month:"))
@@ -92,6 +120,11 @@ async def handle_admin_month(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.bot, callback.from_user.id):
         await state.clear()
         await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    data = await state.get_data()
+    if data.get("kind") != "month":
+        await state.clear()
+        await callback.answer(texts.admin_session_reset(), show_alert=True)
         return
     raw_month = (callback.data or "").split(":", maxsplit=1)[-1]
     try:
@@ -103,7 +136,6 @@ async def handle_admin_month(callback: CallbackQuery, state: FSMContext):
         await callback.answer(texts.admin_invalid_month(), show_alert=True)
         return
     month = f"{month_int:02d}"
-    data = await state.get_data()
     year = data.get("year")
     if not year:
         await state.clear()
@@ -129,9 +161,10 @@ async def handle_admin_sign(callback: CallbackQuery, state: FSMContext):
         await callback.answer(texts.admin_invalid_sign(), show_alert=True)
         return
     data = await state.get_data()
+    kind = data.get("kind")
     year = data.get("year")
     month = data.get("month")
-    if not year or not month:
+    if not year or not kind:
         await state.clear()
         await callback.message.answer(texts.admin_session_reset())
         await callback.answer()
@@ -139,7 +172,14 @@ async def handle_admin_sign(callback: CallbackQuery, state: FSMContext):
     await state.update_data(sign=sign)
     await state.set_state(AdminUpload.file)
     await callback.answer()
-    await callback.message.answer(texts.admin_prompt_file(year, month, sign))
+    if kind == "year":
+        await callback.message.answer(texts.admin_prompt_file_year(year, sign))
+    else:
+        if not month:
+            await state.clear()
+            await callback.message.answer(texts.admin_session_reset())
+            return
+        await callback.message.answer(texts.admin_prompt_file_month(year, month, sign))
 
 
 def _detect_extension(message: Message) -> Optional[str]:
@@ -152,8 +192,11 @@ def _detect_extension(message: Message) -> Optional[str]:
     return None
 
 
-def _destination_path(media_dir: Path, year: str, month: str, sign: str, extension: str) -> Path:
-    target_dir = media_dir / year / month
+def _destination_path(kind: str, media_dir: Path, year: str, sign: str, extension: str, month: str | None) -> Path:
+    if kind == "year":
+        target_dir = media_dir / "year" / year
+    else:
+        target_dir = media_dir / "month" / year / (month or "01")
     target_dir.mkdir(parents=True, exist_ok=True)
     return target_dir / f"{sign}.{extension}"
 
@@ -181,15 +224,20 @@ async def handle_admin_file(message: Message, state: FSMContext):
         await message.answer(texts.admin_invalid_file())
         return
     data = await state.get_data()
+    kind = data.get("kind")
     year = data.get("year")
     month = data.get("month")
     sign = data.get("sign")
     settings = get_settings(message.bot)
-    if not year or not month or not sign:
+    if kind not in {"year", "month"} or not year or not sign:
         await state.clear()
         await message.answer(texts.admin_session_reset())
         return
-    destination = _destination_path(settings.media_dir, year, month, sign, extension)
+    if kind == "month" and not month:
+        await state.clear()
+        await message.answer(texts.admin_session_reset())
+        return
+    destination = _destination_path(kind, settings.media_dir, year, sign, extension, month)
     for ext in media.ALLOWED_EXTENSIONS:
         existing = destination.with_suffix(f".{ext}")
         if existing.exists():
@@ -199,5 +247,8 @@ async def handle_admin_file(message: Message, state: FSMContext):
         await message.answer(texts.admin_save_failed())
         return
     await state.clear()
-    await message.answer(texts.admin_save_success(year, month, sign))
+    if kind == "year":
+        await message.answer(texts.admin_save_success_year(year, sign))
+    else:
+        await message.answer(texts.admin_save_success_month(year, month, sign))
     await message.answer(texts.admin_menu(), reply_markup=build_admin_menu())

@@ -1,12 +1,16 @@
 from app.config import SIGNS_RU
 
 
+def welcome() -> str:
+    return (
+        "✨ Добро пожаловать в «Твоя путеводная — гороскопы» ✨\n\n"
+        "🔮 Здесь ты найдёшь точные и вдохновляющие гороскопы для всех знаков зодиака.\n"
+        "Выбери расклад: на год или на месяц."
+    )
+
+
 def no_content() -> str:
     return "Контент пока не готов. Загляни позже."
-
-
-def choose_year() -> str:
-    return "Выбери год:"
 
 
 def invalid_year() -> str:
@@ -19,6 +23,10 @@ def invalid_month() -> str:
 
 def invalid_sign() -> str:
     return "Некорректный выбор."
+
+
+def invalid_choice() -> str:
+    return "Некорректный выбор. Попробуй еще раз."
 
 
 def year_unavailable() -> str:
@@ -41,8 +49,12 @@ def month_content_missing() -> str:
     return "Контент для этого месяца пока не готов."
 
 
+def year_content_missing() -> str:
+    return "Контент для этого года пока не готов."
+
+
 def content_missing() -> str:
-    return "Контент для выбранного месяца пока не готов."
+    return "Контент для выбранного расклада пока не готов."
 
 
 def order_not_found() -> str:
@@ -57,9 +69,30 @@ def invalid_product() -> str:
     return "Некорректный товар."
 
 
-def price_caption(month_name: str, year: str, sign: str, price_rub: float) -> str:
+def year_section_empty() -> str:
+    return "Годовые расклады пока недоступны."
+
+
+def month_section_empty() -> str:
+    return "Месячные расклады пока недоступны."
+
+
+def choose_yearly_year() -> str:
+    return "Выбери год для годового расклада:"
+
+
+def choose_monthly_year() -> str:
+    return "Выбери год, чтобы посмотреть месячные расклады:"
+
+
+def price_caption_month(month_name: str, year: str, sign: str, price_rub: float) -> str:
     sign_name = SIGNS_RU.get(sign, sign)
     return f"{month_name} {year}, {sign_name}. Цена {price_rub:.0f} ₽"
+
+
+def price_caption_year(year: str, sign: str, price_rub: float) -> str:
+    sign_name = SIGNS_RU.get(sign, sign)
+    return f"{year} год, {sign_name}. Цена {price_rub:.0f} ₽"
 
 
 def month_prompt(month_name: str, year: str) -> str:
@@ -68,6 +101,10 @@ def month_prompt(month_name: str, year: str) -> str:
 
 def year_prompt(year: str) -> str:
     return f"Год {year}. Выбери месяц:"
+
+
+def year_sign_prompt(year: str) -> str:
+    return f"Год {year}. Выбери знак:"
 
 
 def file_missing_after_pay() -> str:
@@ -86,6 +123,10 @@ def admin_menu() -> str:
     return "Админ-меню"
 
 
+def admin_choose_type() -> str:
+    return "Выбери тип расклада: годовой или месячный."
+
+
 def admin_prompt_year() -> str:
     return "Введи год в формате YYYY"
 
@@ -102,6 +143,10 @@ def admin_choose_month(year: str) -> str:
     return f"Год {year}. Выбери месяц для загрузки:"
 
 
+def admin_choose_sign_year(year: str) -> str:
+    return f"{year} год. Выбери знак зодиака:"
+
+
 def admin_choose_sign(year: str, month: str) -> str:
     return f"{month}.{year}. Выбери знак зодиака:"
 
@@ -110,10 +155,22 @@ def admin_invalid_sign() -> str:
     return "Некорректный знак."
 
 
-def admin_prompt_file(year: str, month: str, sign: str) -> str:
+def admin_invalid_type() -> str:
+    return "Некорректный тип расклада."
+
+
+def admin_prompt_file_month(year: str, month: str, sign: str) -> str:
     sign_name = SIGNS_RU.get(sign, sign)
     return (
         f"{month}.{year}, {sign_name}. Отправь изображение знака (jpg/png/webp) "
+        "файлом или фото."
+    )
+
+
+def admin_prompt_file_year(year: str, sign: str) -> str:
+    sign_name = SIGNS_RU.get(sign, sign)
+    return (
+        f"{year} год, {sign_name}. Отправь изображение знака (jpg/png/webp) "
         "файлом или фото."
     )
 
@@ -130,6 +187,11 @@ def admin_save_failed() -> str:
     return "Не удалось сохранить файл. Попробуй еще раз."
 
 
-def admin_save_success(year: str, month: str, sign: str) -> str:
+def admin_save_success_month(year: str, month: str, sign: str) -> str:
     sign_name = SIGNS_RU.get(sign, sign)
     return f"Файл для {month}.{year}, {sign_name} сохранен."
+
+
+def admin_save_success_year(year: str, sign: str) -> str:
+    sign_name = SIGNS_RU.get(sign, sign)
+    return f"Файл для {year} года, {sign_name} сохранен."
