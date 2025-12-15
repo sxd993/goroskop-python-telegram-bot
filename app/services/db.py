@@ -67,6 +67,39 @@ async def create_order(
     }
 
 
+async def create_paid_order(
+    db_path: Path,
+    user_id: int,
+    product_id: str,
+    amount_kopeks: int,
+    currency: str,
+    telegram_charge_id: str,
+) -> Order:
+    order_id = str(uuid.uuid4())
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            INSERT INTO orders (id, user_id, product_id, amount_kopeks, currency, status, created_at, paid_at, telegram_charge_id)
+            VALUES (?, ?, ?, ?, ?, 'paid', ?, ?, ?)
+            """,
+            (order_id, user_id, product_id, amount_kopeks, currency, now, now, telegram_charge_id),
+        )
+        await db.commit()
+    return {
+        "id": order_id,
+        "user_id": user_id,
+        "product_id": product_id,
+        "amount_kopeks": amount_kopeks,
+        "currency": currency,
+        "status": "paid",
+        "created_at": now,
+        "paid_at": now,
+        "delivered_at": None,
+        "telegram_charge_id": telegram_charge_id,
+    }
+
+
 async def get_order(db_path: Path, order_id: str) -> Optional[Order]:
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
@@ -117,3 +150,21 @@ async def mark_delivered(db_path: Path, order_id: str) -> None:
             (delivered_at, order_id),
         )
         await db.commit()
+
+
+async def fetch_sales_stats(db_path: Path) -> list[tuple[str, int, int]]:
+    """
+    Returns list of tuples: (product_id, paid_count, total_amount_kopeks)
+    """
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT product_id, COUNT(*) AS paid_count, SUM(amount_kopeks) AS total_amount
+            FROM orders
+            WHERE status = 'paid'
+            GROUP BY product_id
+            ORDER BY paid_count DESC, product_id ASC
+            """
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [(row[0], row[1], row[2]) for row in rows]

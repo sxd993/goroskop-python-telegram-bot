@@ -157,6 +157,39 @@ def find_month_content_path(media_dir: Path, ym: str, sign: str) -> Optional[Pat
     return None
 
 
+def _cleanup_empty_dir(path: Path) -> None:
+    try:
+        path.rmdir()
+    except OSError:
+        pass
+
+
+def delete_month_content(media_dir: Path, ym: str, sign: str) -> bool:
+    path = find_month_content_path(media_dir, ym, sign)
+    if not path:
+        return False
+    try:
+        path.unlink()
+    except OSError:
+        return False
+    if path.parent.name == sign:
+        _cleanup_empty_dir(path.parent)
+    return True
+
+
+def delete_year_content(media_dir: Path, year: str, sign: str) -> bool:
+    path = find_year_content_path(media_dir, year, sign)
+    if not path:
+        return False
+    try:
+        path.unlink()
+    except OSError:
+        return False
+    if path.parent.name == sign:
+        _cleanup_empty_dir(path.parent)
+    return True
+
+
 def build_month_product_id(ym: str, sign: str) -> Optional[str]:
     if parse_year_month(ym) and sign in SIGNS_RU:
         return f"month:{ym}:{sign}"

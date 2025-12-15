@@ -12,12 +12,16 @@ from app import texts
 from app.config import Settings, SIGNS_RU
 from app.keyboards.admin import (
     ADMIN_ADD_FORECAST_CALLBACK,
+    ADMIN_BACK_MENU_CALLBACK,
+    ADMIN_DELETE_FORECAST_CALLBACK,
+    ADMIN_STATS_CALLBACK,
     build_admin_menu,
     build_admin_months_keyboard,
     build_admin_type_keyboard,
     build_admin_signs_keyboard,
 )
-from app.services import media
+from app.services import media, db
+from app.services.parsing import parse_product
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +36,13 @@ class AdminUpload(StatesGroup):
     month = State()
     sign = State()
     file = State()
+
+
+class AdminDelete(StatesGroup):
+    kind = State()
+    year = State()
+    month = State()
+    sign = State()
 
 
 def setup_handlers(settings: Settings) -> None:
@@ -71,6 +82,55 @@ async def handle_admin_add(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(texts.admin_choose_type(), reply_markup=build_admin_type_keyboard())
 
 
+@router.callback_query(F.data == ADMIN_DELETE_FORECAST_CALLBACK)
+async def handle_admin_delete(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    await state.clear()
+    await state.set_state(AdminDelete.kind)
+    await callback.answer()
+    await callback.message.answer(texts.admin_delete_start(), reply_markup=build_admin_type_keyboard())
+
+
+@router.callback_query(F.data == ADMIN_STATS_CALLBACK)
+async def handle_admin_stats(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    await state.clear()
+    stats = await db.fetch_sales_stats(get_settings(callback.bot).db_path)
+    if not stats:
+        await callback.answer()
+        await callback.message.answer(texts.admin_stats_empty())
+        return
+    lines = [texts.admin_stats_title()]
+    for product_id, count, total in stats:
+        parsed = parse_product(product_id)
+        if not parsed:
+            continue
+        sign_name = SIGNS_RU.get(parsed["sign"], parsed["sign"])
+        if parsed["kind"] == "month" and parsed["month"]:
+            ym = f"{parsed['year']}-{parsed['month']}"
+            month_name = media.month_name_from_ym(ym) or ym
+            label = f"{month_name} {parsed['year']}, {sign_name}"
+        else:
+            label = f"{parsed['year']} год, {sign_name}"
+        lines.append(f"{label}: {count} шт. / {total/100:.0f} ₽")
+    await callback.answer()
+    await callback.message.answer("\n".join(lines))
+
+
+@router.callback_query(F.data == ADMIN_BACK_MENU_CALLBACK)
+async def handle_admin_back_menu(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    await state.clear()
+    await callback.answer()
+    await callback.message.answer(texts.admin_menu(), reply_markup=build_admin_menu())
+
+
 @router.callback_query(AdminUpload.kind, F.data.startswith("admin-type:"))
 async def handle_admin_type(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.bot, callback.from_user.id):
@@ -83,6 +143,22 @@ async def handle_admin_type(callback: CallbackQuery, state: FSMContext):
         return
     await state.update_data(kind=kind)
     await state.set_state(AdminUpload.year)
+    await callback.answer()
+    await callback.message.answer(texts.admin_prompt_year())
+
+
+@router.callback_query(AdminDelete.kind, F.data.startswith("admin-type:"))
+async def handle_admin_delete_type(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await state.clear()
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    kind = (callback.data or "").split(":", maxsplit=1)[-1]
+    if kind not in {"year", "month"}:
+        await callback.answer(texts.admin_invalid_type(), show_alert=True)
+        return
+    await state.update_data(kind=kind)
+    await state.set_state(AdminDelete.year)
     await callback.answer()
     await callback.message.answer(texts.admin_prompt_year())
 
@@ -113,6 +189,34 @@ async def handle_admin_year(message: Message, state: FSMContext):
     else:
         await state.set_state(AdminUpload.month)
         await message.answer(texts.admin_choose_month(year), reply_markup=build_admin_months_keyboard())
+
+
+@router.message(AdminDelete.year)
+async def handle_admin_delete_year(message: Message, state: FSMContext):
+    if not is_admin(message.bot, message.from_user.id):
+        await state.clear()
+        await message.answer(texts.admin_forbidden())
+        return
+    data = await state.get_data()
+    kind = data.get("kind")
+    if kind not in {"year", "month"}:
+        await state.clear()
+        await message.answer(texts.admin_session_reset())
+        return
+    if not message.text:
+        await message.answer(texts.admin_invalid_year())
+        return
+    year = message.text.strip()
+    if not media.is_valid_year(year):
+        await message.answer(texts.admin_invalid_year())
+        return
+    await state.update_data(year=year)
+    if kind == "year":
+        await state.set_state(AdminDelete.sign)
+        await message.answer(texts.admin_choose_sign_delete_year(year), reply_markup=build_admin_signs_keyboard())
+    else:
+        await state.set_state(AdminDelete.month)
+        await message.answer(texts.admin_choose_month_delete(year), reply_markup=build_admin_months_keyboard())
 
 
 @router.callback_query(AdminUpload.month, F.data.startswith("admin-month:"))
@@ -150,6 +254,41 @@ async def handle_admin_month(callback: CallbackQuery, state: FSMContext):
     )
 
 
+@router.callback_query(AdminDelete.month, F.data.startswith("admin-month:"))
+async def handle_admin_delete_month(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await state.clear()
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    data = await state.get_data()
+    if data.get("kind") != "month":
+        await state.clear()
+        await callback.answer(texts.admin_session_reset(), show_alert=True)
+        return
+    raw_month = (callback.data or "").split(":", maxsplit=1)[-1]
+    try:
+        month_int = int(raw_month)
+    except ValueError:
+        await callback.answer(texts.admin_invalid_month(), show_alert=True)
+        return
+    if month_int < 1 or month_int > 12:
+        await callback.answer(texts.admin_invalid_month(), show_alert=True)
+        return
+    month = f"{month_int:02d}"
+    year = data.get("year")
+    if not year:
+        await state.clear()
+        await callback.message.answer(texts.admin_session_reset())
+        await callback.answer()
+        return
+    await state.update_data(month=month)
+    await state.set_state(AdminDelete.sign)
+    await callback.answer()
+    await callback.message.answer(
+        texts.admin_choose_sign_delete_month(year, month), reply_markup=build_admin_signs_keyboard()
+    )
+
+
 @router.callback_query(AdminUpload.sign, F.data.startswith("admin-sign:"))
 async def handle_admin_sign(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.bot, callback.from_user.id):
@@ -180,6 +319,44 @@ async def handle_admin_sign(callback: CallbackQuery, state: FSMContext):
             await callback.message.answer(texts.admin_session_reset())
             return
         await callback.message.answer(texts.admin_prompt_file_month(year, month, sign))
+
+
+@router.callback_query(AdminDelete.sign, F.data.startswith("admin-sign:"))
+async def handle_admin_delete_sign(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await state.clear()
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    sign = (callback.data or "").split(":", maxsplit=1)[-1]
+    if sign not in SIGNS_RU:
+        await callback.answer(texts.admin_invalid_sign(), show_alert=True)
+        return
+    data = await state.get_data()
+    kind = data.get("kind")
+    year = data.get("year")
+    month = data.get("month")
+    settings = get_settings(callback.bot)
+    if kind not in {"year", "month"} or not year:
+        await state.clear()
+        await callback.message.answer(texts.admin_session_reset())
+        await callback.answer()
+        return
+    await state.clear()
+    success = False
+    if kind == "year":
+        success = media.delete_year_content(settings.media_dir, year, sign)
+        text = texts.admin_delete_success_year(year, sign) if success else texts.admin_delete_missing()
+    else:
+        if not month:
+            await callback.message.answer(texts.admin_session_reset())
+            await callback.answer()
+            return
+        ym = f"{year}-{month}"
+        success = media.delete_month_content(settings.media_dir, ym, sign)
+        text = texts.admin_delete_success_month(year, month, sign) if success else texts.admin_delete_missing()
+    await callback.answer()
+    await callback.message.answer(text)
+    await callback.message.answer(texts.admin_menu(), reply_markup=build_admin_menu())
 
 
 def _detect_extension(message: Message) -> Optional[str]:

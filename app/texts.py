@@ -127,6 +127,10 @@ def admin_choose_type() -> str:
     return "Выбери тип гороскопа: годовой или месячный."
 
 
+def admin_delete_start() -> str:
+    return "Что удалить: годовой или месячный гороскоп?"
+
+
 def admin_prompt_year() -> str:
     return "Введи год в формате YYYY"
 
@@ -143,12 +147,24 @@ def admin_choose_month(year: str) -> str:
     return f"Год {year}. Выбери месяц для загрузки:"
 
 
+def admin_choose_month_delete(year: str) -> str:
+    return f"Год {year}. Выбери месяц для удаления:"
+
+
 def admin_choose_sign_year(year: str) -> str:
     return f"{year} год. Выбери знак зодиака:"
 
 
 def admin_choose_sign(year: str, month: str) -> str:
     return f"{month}.{year}. Выбери знак зодиака:"
+
+
+def admin_choose_sign_delete_year(year: str) -> str:
+    return f"{year} год. Выбери знак для удаления:"
+
+
+def admin_choose_sign_delete_month(year: str, month: str) -> str:
+    return f"{month}.{year}. Выбери знак для удаления:"
 
 
 def admin_invalid_sign() -> str:
@@ -177,6 +193,28 @@ def admin_prompt_file_year(year: str, sign: str) -> str:
 
 def admin_invalid_file() -> str:
     return "Нужно отправить изображение (jpg/png/webp)."
+
+
+def admin_delete_missing() -> str:
+    return "Файл не найден, нечего удалять."
+
+
+def admin_delete_success_year(year: str, sign: str) -> str:
+    sign_name = SIGNS_RU.get(sign, sign)
+    return f"Удалил {year} год, {sign_name}."
+
+
+def admin_delete_success_month(year: str, month: str, sign: str) -> str:
+    sign_name = SIGNS_RU.get(sign, sign)
+    return f"Удалил {month}.{year}, {sign_name}."
+
+
+def admin_stats_title() -> str:
+    return "Статистика продаж (оплаченные заказы):"
+
+
+def admin_stats_empty() -> str:
+    return "Пока нет оплаченных заказов."
 
 
 def admin_session_reset() -> str:
