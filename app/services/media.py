@@ -82,7 +82,10 @@ def available_signs(media_dir: Path, ym: str) -> List[str]:
     for item in target_dir.iterdir():
         if item.is_dir() and item.name in SIGNS_RU:
             signs.add(item.name)
-    return sorted(signs)
+    # Keep zodiac order from Aries to Pisces; append any extras alphabetically.
+    ordered = [sign for sign in SIGNS_RU if sign in signs]
+    extras = sorted(signs.difference(SIGNS_RU))
+    return ordered + extras
 
 
 def find_content_path(media_dir: Path, ym: str, sign: str) -> Optional[Path]:
