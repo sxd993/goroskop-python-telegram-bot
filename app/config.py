@@ -1,7 +1,7 @@
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # === Константы и словари ===
@@ -46,8 +46,23 @@ class Settings(BaseSettings):
     currency: str = Field("RUB", alias="CURRENCY")
     media_dir: Path = Field(Path("media"), alias="MEDIA_DIR")
     db_path: Path = Field(Path("data/bot.sqlite3"), alias="DB_PATH")
+    admin_ids: List[int] = Field(default_factory=list, alias="ADMIN_IDS")
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", case_sensitive=True)
+
+    @field_validator("admin_ids", mode="before")
+    @classmethod
+    def parse_admin_ids(cls, value):  # type: ignore[no-untyped-def]
+        if value is None:
+            return []
+        if isinstance(value, str):
+            items = [part.strip() for part in value.replace(";", ",").split(",") if part.strip()]
+            return [int(item) for item in items]
+        if isinstance(value, int):
+            return [value]
+        if isinstance(value, (list, tuple, set)):
+            return [int(item) for item in value]
+        raise TypeError("ADMIN_IDS must be a comma-separated list or array of integers")
 
 
 def load_settings() -> Settings:

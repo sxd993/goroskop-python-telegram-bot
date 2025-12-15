@@ -1,0 +1,203 @@
+import logging
+from pathlib import Path
+from typing import Optional
+
+from aiogram import Bot, F, Router
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import CallbackQuery, Message
+
+from app import texts
+from app.config import Settings, SIGNS_RU
+from app.keyboards.admin import (
+    ADMIN_ADD_FORECAST_CALLBACK,
+    build_admin_menu,
+    build_admin_months_keyboard,
+    build_admin_signs_keyboard,
+)
+from app.services import media
+
+logger = logging.getLogger(__name__)
+
+router = Router()
+
+_settings: Settings | None = None
+
+
+class AdminUpload(StatesGroup):
+    year = State()
+    month = State()
+    sign = State()
+    file = State()
+
+
+def setup_handlers(settings: Settings) -> None:
+    global _settings
+    _settings = settings
+
+
+def get_settings(bot: Bot) -> Settings:
+    if _settings is None:
+        raise RuntimeError("Handlers are not configured with settings")
+    return _settings
+
+
+def is_admin(bot: Bot, user_id: Optional[int]) -> bool:
+    settings = get_settings(bot)
+    return bool(user_id and user_id in settings.admin_ids)
+
+
+@router.message(Command("admin"))
+async def handle_admin_entry(message: Message, state: FSMContext):
+    if not is_admin(message.bot, message.from_user.id):
+        await state.clear()
+        await message.answer(texts.admin_forbidden())
+        return
+    await state.clear()
+    await message.answer(texts.admin_menu(), reply_markup=build_admin_menu())
+
+
+@router.callback_query(F.data == ADMIN_ADD_FORECAST_CALLBACK)
+async def handle_admin_add(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    await state.clear()
+    await state.set_state(AdminUpload.year)
+    await callback.answer()
+    await callback.message.answer(texts.admin_prompt_year())
+
+
+@router.message(AdminUpload.year)
+async def handle_admin_year(message: Message, state: FSMContext):
+    if not is_admin(message.bot, message.from_user.id):
+        await state.clear()
+        await message.answer(texts.admin_forbidden())
+        return
+    if not message.text:
+        await message.answer(texts.admin_invalid_year())
+        return
+    year = message.text.strip()
+    if not media.is_valid_year(year):
+        await message.answer(texts.admin_invalid_year())
+        return
+    await state.update_data(year=year)
+    await state.set_state(AdminUpload.month)
+    await message.answer(texts.admin_choose_month(year), reply_markup=build_admin_months_keyboard())
+
+
+@router.callback_query(AdminUpload.month, F.data.startswith("admin-month:"))
+async def handle_admin_month(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await state.clear()
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    raw_month = (callback.data or "").split(":", maxsplit=1)[-1]
+    try:
+        month_int = int(raw_month)
+    except ValueError:
+        await callback.answer(texts.admin_invalid_month(), show_alert=True)
+        return
+    if month_int < 1 or month_int > 12:
+        await callback.answer(texts.admin_invalid_month(), show_alert=True)
+        return
+    month = f"{month_int:02d}"
+    data = await state.get_data()
+    year = data.get("year")
+    if not year:
+        await state.clear()
+        await callback.message.answer(texts.admin_session_reset())
+        await callback.answer()
+        return
+    await state.update_data(month=month)
+    await state.set_state(AdminUpload.sign)
+    await callback.answer()
+    await callback.message.answer(
+        texts.admin_choose_sign(year, month), reply_markup=build_admin_signs_keyboard()
+    )
+
+
+@router.callback_query(AdminUpload.sign, F.data.startswith("admin-sign:"))
+async def handle_admin_sign(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await state.clear()
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    sign = (callback.data or "").split(":", maxsplit=1)[-1]
+    if sign not in SIGNS_RU:
+        await callback.answer(texts.admin_invalid_sign(), show_alert=True)
+        return
+    data = await state.get_data()
+    year = data.get("year")
+    month = data.get("month")
+    if not year or not month:
+        await state.clear()
+        await callback.message.answer(texts.admin_session_reset())
+        await callback.answer()
+        return
+    await state.update_data(sign=sign)
+    await state.set_state(AdminUpload.file)
+    await callback.answer()
+    await callback.message.answer(texts.admin_prompt_file(year, month, sign))
+
+
+def _detect_extension(message: Message) -> Optional[str]:
+    if message.document and message.document.file_name:
+        parts = message.document.file_name.rsplit(".", maxsplit=1)
+        if len(parts) == 2:
+            return parts[-1].lower()
+    if message.photo:
+        return "jpg"
+    return None
+
+
+def _destination_path(media_dir: Path, year: str, month: str, sign: str, extension: str) -> Path:
+    ym_dir = media_dir / f"{year}-{month}"
+    ym_dir.mkdir(parents=True, exist_ok=True)
+    return ym_dir / f"{sign}.{extension}"
+
+
+async def _save_media(message: Message, destination: Path) -> bool:
+    if not message.document and not message.photo:
+        return False
+    file_to_download = message.document or message.photo[-1]
+    try:
+        await message.bot.download(file_to_download, destination=destination)
+        return True
+    except Exception:
+        logger.exception("Failed to download media to %s", destination)
+        return False
+
+
+@router.message(AdminUpload.file)
+async def handle_admin_file(message: Message, state: FSMContext):
+    if not is_admin(message.bot, message.from_user.id):
+        await state.clear()
+        await message.answer(texts.admin_forbidden())
+        return
+    extension = _detect_extension(message)
+    if not extension or extension not in media.ALLOWED_EXTENSIONS:
+        await message.answer(texts.admin_invalid_file())
+        return
+    data = await state.get_data()
+    year = data.get("year")
+    month = data.get("month")
+    sign = data.get("sign")
+    settings = get_settings(message.bot)
+    if not year or not month or not sign:
+        await state.clear()
+        await message.answer(texts.admin_session_reset())
+        return
+    destination = _destination_path(settings.media_dir, year, month, sign, extension)
+    for ext in media.ALLOWED_EXTENSIONS:
+        existing = destination.with_suffix(f".{ext}")
+        if existing.exists():
+            existing.unlink()
+    success = await _save_media(message, destination)
+    if not success:
+        await message.answer(texts.admin_save_failed())
+        return
+    await state.clear()
+    await message.answer(texts.admin_save_success(year, month, sign))
+    await message.answer(texts.admin_menu(), reply_markup=build_admin_menu())

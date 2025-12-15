@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 
 from app.config import load_settings
+from app.handlers.admin import router as admin_router, setup_handlers as setup_admin_handlers
 from app.handlers.navigation import router as navigation_router, setup_handlers
 from app.services.db import init_db
 
@@ -16,8 +17,10 @@ async def main() -> None:
 
     bot = Bot(token=settings.bot_token, parse_mode=ParseMode.HTML)
     setup_handlers(settings)
+    setup_admin_handlers(settings)
 
     dp = Dispatcher()
+    dp.include_router(admin_router)
     dp.include_router(navigation_router)
 
     await dp.start_polling(bot)

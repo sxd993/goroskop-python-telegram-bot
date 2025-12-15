@@ -76,3 +76,60 @@ def file_missing_after_pay() -> str:
 
 def order_paid_message() -> str:
     return "Заказ уже оплачен, отправляю файл."
+
+
+def admin_forbidden() -> str:
+    return "У вас нет доступа к админ-панели."
+
+
+def admin_menu() -> str:
+    return "Админ-меню"
+
+
+def admin_prompt_year() -> str:
+    return "Введи год в формате YYYY"
+
+
+def admin_invalid_year() -> str:
+    return "Некорректный год. Попробуй еще раз."
+
+
+def admin_invalid_month() -> str:
+    return "Некорректный месяц."
+
+
+def admin_choose_month(year: str) -> str:
+    return f"Год {year}. Выбери месяц для загрузки:"
+
+
+def admin_choose_sign(year: str, month: str) -> str:
+    return f"{month}.{year}. Выбери знак зодиака:"
+
+
+def admin_invalid_sign() -> str:
+    return "Некорректный знак."
+
+
+def admin_prompt_file(year: str, month: str, sign: str) -> str:
+    sign_name = SIGNS_RU.get(sign, sign)
+    return (
+        f"{month}.{year}, {sign_name}. Отправь изображение знака (jpg/png/webp) "
+        "файлом или фото."
+    )
+
+
+def admin_invalid_file() -> str:
+    return "Нужно отправить изображение (jpg/png/webp)."
+
+
+def admin_session_reset() -> str:
+    return "Сессия сброшена. Запусти /admin заново."
+
+
+def admin_save_failed() -> str:
+    return "Не удалось сохранить файл. Попробуй еще раз."
+
+
+def admin_save_success(year: str, month: str, sign: str) -> str:
+    sign_name = SIGNS_RU.get(sign, sign)
+    return f"Файл для {month}.{year}, {sign_name} сохранен."
