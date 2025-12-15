@@ -153,9 +153,9 @@ def _detect_extension(message: Message) -> Optional[str]:
 
 
 def _destination_path(media_dir: Path, year: str, month: str, sign: str, extension: str) -> Path:
-    ym_dir = media_dir / f"{year}-{month}"
-    ym_dir.mkdir(parents=True, exist_ok=True)
-    return ym_dir / f"{sign}.{extension}"
+    target_dir = media_dir / year / month
+    target_dir.mkdir(parents=True, exist_ok=True)
+    return target_dir / f"{sign}.{extension}"
 
 
 async def _save_media(message: Message, destination: Path) -> bool:

@@ -29,9 +29,8 @@ def available_years(media_dir: Path) -> List[str]:
     for path in media_dir.iterdir():
         if not path.is_dir():
             continue
-        match = parse_year_month(path.name)
-        if match:
-            years.add(match.group("year"))
+        if is_valid_year(path.name):
+            years.add(path.name)
     return sorted(years)
 
 
@@ -39,12 +38,18 @@ def months_for_year(media_dir: Path, year: str) -> List[str]:
     if not is_valid_year(year) or not media_dir.exists():
         return []
     months: List[str] = []
-    for path in media_dir.iterdir():
+    year_dir = media_dir / year
+    if not year_dir.is_dir():
+        return []
+    for path in year_dir.iterdir():
         if not path.is_dir():
             continue
-        match = parse_year_month(path.name)
-        if match and match.group("year") == year:
-            months.append(path.name)
+        try:
+            month_int = int(path.name)
+        except ValueError:
+            continue
+        if 1 <= month_int <= 12:
+            months.append(f"{year}-{month_int:02d}")
     return sorted(months)
 
 
@@ -65,7 +70,7 @@ def available_signs(media_dir: Path, ym: str) -> List[str]:
     match = parse_year_month(ym)
     if not match:
         return []
-    target_dir = media_dir / ym
+    target_dir = media_dir / match.group("year") / match.group("month")
     if not target_dir.is_dir():
         return []
     signs = set()
@@ -84,7 +89,7 @@ def find_content_path(media_dir: Path, ym: str, sign: str) -> Optional[Path]:
     match = parse_year_month(ym)
     if not match or sign not in SIGNS_RU:
         return None
-    target_dir = media_dir / ym
+    target_dir = media_dir / match.group("year") / match.group("month")
     if not target_dir.exists():
         return None
     for ext in ALLOWED_EXTENSIONS:
