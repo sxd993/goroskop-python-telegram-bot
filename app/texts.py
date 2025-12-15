@@ -131,6 +131,30 @@ def admin_delete_start() -> str:
     return "Что удалить: годовой или месячный гороскоп?"
 
 
+def admin_choose_year_delete_year() -> str:
+    return "Выбери год, который нужно удалить (годовой гороскоп):"
+
+
+def admin_choose_year_delete_month() -> str:
+    return "Выбери год с месячными гороскопами для удаления:"
+
+
+def admin_delete_no_years() -> str:
+    return "Нет загруженных годовых гороскопов для удаления."
+
+
+def admin_delete_no_month_years() -> str:
+    return "Нет загруженных месячных гороскопов для удаления."
+
+
+def admin_delete_no_months(year: str) -> str:
+    return f"Для {year} года нет месяцев для удаления."
+
+
+def admin_delete_no_signs() -> str:
+    return "Нет файлов этого типа для удаления."
+
+
 def admin_prompt_year() -> str:
     return "Введи год в формате YYYY"
 
@@ -207,6 +231,20 @@ def admin_delete_success_year(year: str, sign: str) -> str:
 def admin_delete_success_month(year: str, month: str, sign: str) -> str:
     sign_name = SIGNS_RU.get(sign, sign)
     return f"Удалил {month}.{year}, {sign_name}."
+
+
+def admin_delete_confirm_year(year: str, sign: str) -> str:
+    sign_name = SIGNS_RU.get(sign, sign)
+    return f"Удалить {year} год, {sign_name}? Это действие нельзя отменить."
+
+
+def admin_delete_confirm_month(year: str, month: str, sign: str) -> str:
+    sign_name = SIGNS_RU.get(sign, sign)
+    return f"Удалить {month}.{year}, {sign_name}? Это действие нельзя отменить."
+
+
+def admin_delete_cancelled() -> str:
+    return "Удаление отменено."
 
 
 def admin_stats_title() -> str:

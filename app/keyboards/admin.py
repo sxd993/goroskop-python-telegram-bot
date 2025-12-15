@@ -30,9 +30,22 @@ def build_admin_type_keyboard(include_back: bool = True) -> InlineKeyboardMarkup
     return builder.as_markup()
 
 
-def build_admin_months_keyboard(include_back: bool = True) -> InlineKeyboardMarkup:
+def build_admin_years_keyboard(years: list[str], prefix: str, include_back: bool = True) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for month, name in MONTH_NAMES_RU.items():
+    for year in years:
+        builder.button(text=year, callback_data=f"{prefix}:{year}")
+    builder.adjust(3)
+    if include_back:
+        builder.button(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)
+        builder.adjust(3)
+    return builder.as_markup()
+
+
+def build_admin_months_keyboard(months: list[int] | None = None, include_back: bool = True) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    month_items = months or list(MONTH_NAMES_RU.keys())
+    for month in month_items:
+        name = MONTH_NAMES_RU.get(month, f"{month:02d}")
         builder.button(text=name, callback_data=f"admin-month:{month:02d}")
     builder.adjust(3)
     if include_back:
@@ -41,12 +54,24 @@ def build_admin_months_keyboard(include_back: bool = True) -> InlineKeyboardMark
     return builder.as_markup()
 
 
-def build_admin_signs_keyboard(include_back: bool = True) -> InlineKeyboardMarkup:
+def build_admin_signs_keyboard(signs: list[str] | None = None, include_back: bool = True) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for sign, name in SIGNS_RU.items():
+    sign_items = signs or list(SIGNS_RU.keys())
+    for sign in sign_items:
+        name = SIGNS_RU.get(sign, sign)
         builder.button(text=name, callback_data=f"admin-sign:{sign}")
     builder.adjust(3)
     if include_back:
         builder.button(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)
         builder.adjust(3)
     return builder.as_markup()
+
+
+def build_admin_delete_confirm_keyboard(action: str) -> InlineKeyboardMarkup:
+    # action example: "admin-del-confirm:yes" / "...:no"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Удалить", callback_data=f"{action}:yes")],
+            [InlineKeyboardButton(text="⬅️ Отмена", callback_data=f"{action}:no")],
+        ]
+    )
