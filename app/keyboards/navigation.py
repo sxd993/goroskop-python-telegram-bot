@@ -10,9 +10,9 @@ from app.services import media
 def build_layout_keyboard(*, has_year: bool, has_month: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if has_year:
-        builder.button(text="Годовой расклад", callback_data="mode:year")
+        builder.button(text="Годовой гороскоп", callback_data="mode:year")
     if has_month:
-        builder.button(text="Месячный расклад", callback_data="mode:month")
+        builder.button(text="Месячный гороскоп", callback_data="mode:month")
     builder.adjust(1)
     return builder.as_markup()
 
