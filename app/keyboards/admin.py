@@ -7,6 +7,7 @@ from app.config import MONTH_NAMES_RU, SIGNS_RU
 ADMIN_ADD_FORECAST_CALLBACK = "admin:add_forecast"
 ADMIN_DELETE_FORECAST_CALLBACK = "admin:delete_forecast"
 ADMIN_STATS_CALLBACK = "admin:stats"
+ADMIN_REVIEWS_CALLBACK = "admin:reviews"
 ADMIN_BACK_MENU_CALLBACK = "admin-back:menu"
 
 
@@ -15,6 +16,7 @@ def build_admin_menu() -> InlineKeyboardMarkup:
     builder.button(text="Добавить прогноз", callback_data=ADMIN_ADD_FORECAST_CALLBACK)
     builder.button(text="Удалить прогноз", callback_data=ADMIN_DELETE_FORECAST_CALLBACK)
     builder.button(text="Статистика продаж", callback_data=ADMIN_STATS_CALLBACK)
+    builder.button(text="Отзывы", callback_data=ADMIN_REVIEWS_CALLBACK)
     builder.adjust(1)
     return builder.as_markup()
 

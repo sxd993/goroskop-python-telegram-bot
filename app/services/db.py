@@ -5,7 +5,7 @@ from typing import Optional
 
 import aiosqlite
 
-from app.models import Order
+from app.models import Order, Review
 
 
 CREATE_TABLE_SQL = """
@@ -23,6 +23,20 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 """
 
+CREATE_REVIEWS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS reviews (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL,
+    product_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    text TEXT,
+    created_at TEXT NOT NULL,
+    answered_at TEXT,
+    FOREIGN KEY(order_id) REFERENCES orders(id)
+);
+"""
+
 
 def _now_iso() -> str:
     return dt.datetime.utcnow().isoformat()
@@ -32,6 +46,7 @@ async def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(db_path) as db:
         await db.execute(CREATE_TABLE_SQL)
+        await db.execute(CREATE_REVIEWS_TABLE_SQL)
         await db.commit()
 
 
@@ -168,3 +183,111 @@ async def fetch_sales_stats(db_path: Path) -> list[tuple[str, int, int]]:
         ) as cursor:
             rows = await cursor.fetchall()
             return [(row[0], row[1], row[2]) for row in rows]
+
+
+async def create_review_request(
+    db_path: Path,
+    order_id: str,
+    user_id: int,
+    product_id: str,
+) -> Review:
+    review_id = str(uuid.uuid4())
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            INSERT OR IGNORE INTO reviews (id, order_id, user_id, product_id, status, created_at)
+            VALUES (?, ?, ?, ?, 'pending', ?)
+            """,
+            (review_id, order_id, user_id, product_id, now),
+        )
+        await db.execute(
+            """
+            UPDATE reviews
+            SET status = 'pending',
+                text = NULL,
+                answered_at = NULL
+            WHERE order_id = ? AND status != 'submitted'
+            """,
+            (order_id,),
+        )
+        await db.commit()
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM reviews WHERE order_id = ?", (order_id,)) as cursor:
+            row = await cursor.fetchone()
+            return Review(dict(row)) if row else {
+                "id": review_id,
+                "order_id": order_id,
+                "user_id": user_id,
+                "product_id": product_id,
+                "status": "pending",
+                "text": None,
+                "created_at": now,
+                "answered_at": None,
+            }
+
+
+async def mark_review_submitted(db_path: Path, order_id: str, text: str) -> None:
+    answered_at = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            UPDATE reviews
+            SET status = 'submitted',
+                text = ?,
+                answered_at = COALESCE(answered_at, ?)
+            WHERE order_id = ?
+            """,
+            (text, answered_at, order_id),
+        )
+        await db.commit()
+
+
+async def mark_review_declined(db_path: Path, order_id: str, user_id: int, product_id: str) -> None:
+    await create_review_request(db_path, order_id, user_id, product_id)
+    answered_at = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            UPDATE reviews
+            SET status = 'declined',
+                answered_at = COALESCE(answered_at, ?)
+            WHERE order_id = ? AND status != 'submitted'
+            """,
+            (answered_at, order_id),
+        )
+        await db.commit()
+
+
+async def get_pending_review_for_user(db_path: Path, user_id: int) -> Optional[Review]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT *
+            FROM reviews
+            WHERE user_id = ? AND status = 'pending'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return Review(dict(row)) if row else None
+
+
+async def fetch_recent_reviews(db_path: Path, limit: int = 30) -> list[Review]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT *
+            FROM reviews
+            WHERE status IN ('submitted', 'declined')
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [Review(dict(row)) for row in rows]

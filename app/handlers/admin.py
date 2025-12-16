@@ -1,3 +1,4 @@
+import datetime as dt
 import logging
 from pathlib import Path
 from typing import Optional
@@ -14,6 +15,7 @@ from app.keyboards.admin import (
     ADMIN_ADD_FORECAST_CALLBACK,
     ADMIN_BACK_MENU_CALLBACK,
     ADMIN_DELETE_FORECAST_CALLBACK,
+    ADMIN_REVIEWS_CALLBACK,
     ADMIN_STATS_CALLBACK,
     build_admin_menu,
     build_admin_years_keyboard,
@@ -119,6 +121,45 @@ async def handle_admin_stats(callback: CallbackQuery, state: FSMContext):
         else:
             label = f"{parsed['year']} год, {sign_name}"
         lines.append(f"{label}: {count} шт. / {total/100:.0f} ₽")
+    await callback.answer()
+    await callback.message.answer("\n".join(lines))
+
+
+@router.callback_query(F.data == ADMIN_REVIEWS_CALLBACK)
+async def handle_admin_reviews(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    await state.clear()
+    reviews = await db.fetch_recent_reviews(get_settings(callback.bot).db_path)
+    if not reviews:
+        await callback.answer()
+        await callback.message.answer(texts.admin_reviews_empty())
+        return
+    lines = [texts.admin_reviews_title()]
+    for idx, review in enumerate(reviews, start=1):
+        parsed = parse_product(review["product_id"])
+        if not parsed:
+            continue
+        sign_name = SIGNS_RU.get(parsed["sign"], parsed["sign"])
+        if parsed["kind"] == "month" and parsed["month"]:
+            ym = f"{parsed['year']}-{parsed['month']}"
+            month_name = media.month_name_from_ym(ym) or ym
+            label = f"{month_name} {parsed['year']}, {sign_name}"
+        else:
+            label = f"{parsed['year']} год, {sign_name}"
+        status = review["status"]
+        text = review.get("text") or "—"
+        try:
+            created = dt.datetime.fromisoformat(review["created_at"]).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            created = review["created_at"]
+        order_tag = review["order_id"][:8]
+        base = f"{idx}) {created} | заказ {order_tag} | user {review['user_id']} | {label}"
+        if status == "declined":
+            lines.append(f"{base} — пропущен")
+        else:
+            lines.append(f"{base} — {text}")
     await callback.answer()
     await callback.message.answer("\n".join(lines))
 

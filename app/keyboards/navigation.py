@@ -70,3 +70,11 @@ def build_pay_keyboard(product_id: str, back: str | None = None) -> InlineKeyboa
     if back:
         buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=back)])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def build_review_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="Оставить отзыв", callback_data=f"review:start:{order_id}")],
+        [InlineKeyboardButton(text="Пропустить", callback_data=f"review:skip:{order_id}")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)

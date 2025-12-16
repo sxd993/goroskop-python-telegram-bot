@@ -3,7 +3,7 @@ from pathlib import Path
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
+from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery, ForceReply
 
 from app.config import Settings, SIGNS_RU
 from app.keyboards.navigation import (
@@ -11,6 +11,7 @@ from app.keyboards.navigation import (
     build_month_signs_keyboard,
     build_months_keyboard,
     build_pay_keyboard,
+    build_review_keyboard,
     build_year_signs_keyboard,
     build_years_keyboard,
 )
@@ -415,11 +416,11 @@ async def handle_pre_checkout(query: PreCheckoutQuery):
     logger.info("Pre-checkout ok user=%s payload=%s", query.from_user.id, query.invoice_payload)
 
 
-async def deliver_file(bot: Bot, chat_id: int, order: Order, content_path: Path) -> None:
+async def deliver_file(bot: Bot, chat_id: int, order: Order, content_path: Path) -> bool:
     parsed = parse_product(order["product_id"])
     if not parsed:
         await bot.send_message(chat_id, texts.invalid_product())
-        return
+        return False
     sign_name = SIGNS_RU.get(parsed["sign"], parsed["sign"])
     if parsed["kind"] == "month" and parsed["month"]:
         ym = f"{parsed['year']}-{parsed['month']}"
@@ -431,6 +432,11 @@ async def deliver_file(bot: Bot, chat_id: int, order: Order, content_path: Path)
     if delivered:
         await db.mark_delivered(get_db_path(bot), order["id"])
         logger.info("Content sent user=%s order_id=%s", chat_id, order["id"])
+    return delivered
+
+
+async def prompt_review(bot: Bot, chat_id: int, order: Order) -> None:
+    await bot.send_message(chat_id, texts.review_prompt(), reply_markup=build_review_keyboard(order["id"]))
 
 
 @router.message(F.successful_payment)
@@ -479,4 +485,60 @@ async def handle_successful_payment(message: Message):
         payload,
         payment.telegram_payment_charge_id,
     )
-    await deliver_file(message.bot, message.chat.id, order, content_path)
+    await message.answer(texts.payment_success())
+    delivered = await deliver_file(message.bot, message.chat.id, order, content_path)
+    if delivered:
+        await prompt_review(message.bot, message.chat.id, order)
+
+
+@router.callback_query(F.data.startswith("review:start:"))
+async def handle_review_start(callback: CallbackQuery):
+    order_id = (callback.data or "").split(":", maxsplit=2)[-1]
+    await callback.answer()
+    order = await db.get_order(get_db_path(callback.bot), order_id)
+    if not order or order["user_id"] != callback.from_user.id:
+        await callback.message.answer(texts.review_expired())
+        return
+    review = await db.create_review_request(get_db_path(callback.bot), order_id, order["user_id"], order["product_id"])
+    if review["status"] != "pending":
+        await callback.message.answer(texts.review_expired())
+        return
+    try:
+        await callback.message.edit_reply_markup()
+    except Exception:
+        pass
+    await callback.message.answer(texts.review_request(), reply_markup=ForceReply(selective=True))
+
+
+@router.callback_query(F.data.startswith("review:skip:"))
+async def handle_review_skip(callback: CallbackQuery):
+    order_id = (callback.data or "").split(":", maxsplit=2)[-1]
+    await callback.answer()
+    order = await db.get_order(get_db_path(callback.bot), order_id)
+    if not order or order["user_id"] != callback.from_user.id:
+        await callback.message.answer(texts.review_expired())
+        return
+    review = await db.create_review_request(get_db_path(callback.bot), order_id, order["user_id"], order["product_id"])
+    if review["status"] == "submitted":
+        await callback.message.answer(texts.review_expired())
+        return
+    await db.mark_review_declined(get_db_path(callback.bot), order_id, order["user_id"], order["product_id"])
+    try:
+        await callback.message.edit_reply_markup()
+    except Exception:
+        pass
+    await callback.message.answer(texts.review_skipped())
+
+
+@router.message(F.text)
+async def handle_review_text(message: Message):
+    if not message.text or message.text.startswith("/"):
+        return
+    review_text = message.text.strip()
+    if not review_text:
+        return
+    pending = await db.get_pending_review_for_user(get_db_path(message.bot), message.from_user.id)
+    if not pending:
+        return
+    await db.mark_review_submitted(get_db_path(message.bot), pending["order_id"], review_text)
+    await message.answer(texts.review_thanks())
