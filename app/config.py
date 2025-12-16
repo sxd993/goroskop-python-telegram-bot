@@ -61,7 +61,11 @@ class Settings(BaseSettings):
         if value is None:
             return []
         if isinstance(value, str):
-            items = [part.strip() for part in value.replace(";", ",").split(",") if part.strip()]
+            items = [
+                part.strip()
+                for part in value.replace(";", ",").split(",")
+                if part.strip()
+            ]
             return [int(item) for item in items]
         if isinstance(value, int):
             return [value]

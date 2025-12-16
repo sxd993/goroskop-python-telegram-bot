@@ -11,12 +11,14 @@ from aiogram.types import CallbackQuery, Message
 
 from app import texts
 from app.config import Settings, SIGNS_RU
-from app.keyboards.admin import (
+from app.features.admin.keyboards import (
     ADMIN_ADD_FORECAST_CALLBACK,
     ADMIN_BACK_MENU_CALLBACK,
     ADMIN_DELETE_FORECAST_CALLBACK,
     ADMIN_REVIEWS_CALLBACK,
     ADMIN_STATS_CALLBACK,
+    ADMIN_REVIEW_IMAGE_CALLBACK,
+    build_admin_delete_confirm_keyboard,
     build_admin_menu,
     build_admin_years_keyboard,
     build_admin_months_keyboard,
@@ -47,6 +49,11 @@ class AdminDelete(StatesGroup):
     month = State()
     sign = State()
     confirm = State()
+
+
+class AdminReviewImage(StatesGroup):
+    sign = State()
+    file = State()
 
 
 def setup_handlers(settings: Settings) -> None:
@@ -157,7 +164,7 @@ async def handle_admin_reviews(callback: CallbackQuery, state: FSMContext):
         order_tag = review["order_id"][:8]
         base = f"{idx}) {created} | заказ {order_tag} | user {review['user_id']} | {label}"
         if status == "declined":
-            lines.append(f"{base} — пропущен")
+            lines.append(f"{base} — Нет отзыва")
         else:
             lines.append(f"{base} — {text}")
     await callback.answer()
@@ -172,6 +179,70 @@ async def handle_admin_back_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.answer()
     await callback.message.answer(texts.admin_menu(), reply_markup=build_admin_menu())
+
+
+@router.callback_query(F.data == ADMIN_REVIEW_IMAGE_CALLBACK)
+async def handle_admin_review_image(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    await state.clear()
+    await state.set_state(AdminReviewImage.sign)
+    await callback.answer()
+    await callback.message.answer(texts.admin_review_image_start(), reply_markup=build_admin_signs_keyboard())
+
+
+@router.callback_query(AdminReviewImage.sign, F.data.startswith("admin-sign:"))
+async def handle_admin_review_image_sign(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await state.clear()
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    sign = (callback.data or "").split(":", maxsplit=1)[-1]
+    if sign not in SIGNS_RU:
+        await callback.answer(texts.admin_invalid_sign(), show_alert=True)
+        return
+    await state.update_data(sign=sign)
+    await state.set_state(AdminReviewImage.file)
+    await callback.answer()
+    await callback.message.answer(texts.admin_review_image_prompt(sign))
+
+
+def _review_destination_path(media_dir: Path, sign: str, extension: str) -> Path:
+    target_dir = media_dir / "reviews" / sign
+    target_dir.mkdir(parents=True, exist_ok=True)
+    return target_dir / f"{sign}.{extension}"
+
+
+@router.message(AdminReviewImage.file)
+async def handle_admin_review_image_file(message: Message, state: FSMContext):
+    if not is_admin(message.bot, message.from_user.id):
+        await state.clear()
+        await message.answer(texts.admin_forbidden())
+        return
+    extension = _detect_extension(message)
+    if not extension or extension not in media.ALLOWED_EXTENSIONS:
+        await message.answer(texts.admin_invalid_file())
+        return
+    data = await state.get_data()
+    sign = data.get("sign")
+    settings = get_settings(message.bot)
+    if not sign:
+        await state.clear()
+        await message.answer(texts.admin_session_reset())
+        return
+    destination = _review_destination_path(settings.media_dir, sign, extension)
+    for ext in media.ALLOWED_EXTENSIONS:
+        existing = destination.with_suffix(f".{ext}")
+        if existing.exists():
+            existing.unlink()
+    success = await _save_media(message, destination)
+    if not success:
+        await message.answer(texts.admin_save_failed())
+        return
+    await state.clear()
+    await message.answer(texts.admin_review_image_saved(sign))
+    await message.answer(texts.admin_menu(), reply_markup=build_admin_menu())
 
 
 @router.callback_query(AdminUpload.kind, F.data.startswith("admin-type:"))

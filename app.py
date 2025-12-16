@@ -5,8 +5,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 
 from app.config import load_settings
-from app.handlers.admin import router as admin_router, setup_handlers as setup_admin_handlers
-from app.handlers.navigation import router as navigation_router, setup_handlers
+from app.features.admin.handlers import router as admin_router, setup_handlers as setup_admin_handlers
+from app.features.user.handlers import router as navigation_router, setup_handlers
 from app.services.db import init_db
 
 

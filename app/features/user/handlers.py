@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery, ForceReply
 
 from app.config import Settings, SIGNS_RU
-from app.keyboards.navigation import (
+from app.features.user.keyboards import (
     build_layout_keyboard,
     build_month_signs_keyboard,
     build_months_keyboard,
@@ -527,7 +527,6 @@ async def handle_review_skip(callback: CallbackQuery):
         await callback.message.edit_reply_markup()
     except Exception:
         pass
-    await callback.message.answer(texts.review_skipped())
 
 
 @router.message(F.text)
@@ -537,8 +536,17 @@ async def handle_review_text(message: Message):
     review_text = message.text.strip()
     if not review_text:
         return
+    if len(review_text) < 100:
+        await message.answer(texts.review_request())
+        return
     pending = await db.get_pending_review_for_user(get_db_path(message.bot), message.from_user.id)
     if not pending:
         return
     await db.mark_review_submitted(get_db_path(message.bot), pending["order_id"], review_text)
+    parsed = parse_product(pending["product_id"])
+    if parsed:
+        reward_path = media.find_review_image(get_settings(message.bot).media_dir, parsed["sign"])
+        if reward_path:
+            caption = texts.review_reward_caption(parsed["sign"])
+            await send_content(message.bot, message.chat.id, reward_path, caption)
     await message.answer(texts.review_thanks())
