@@ -226,6 +226,47 @@ async def fetch_sales_stats(db_path: Path) -> list[tuple[str, int, int]]:
             return [(row[0], row[1], row[2]) for row in rows]
 
 
+async def fetch_paid_months_page(db_path: Path, *, limit: int, offset: int) -> list[str]:
+    """
+    Returns distinct YYYY-MM values for paid monthly products, ordered by newest first.
+    """
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT DISTINCT substr(product_id, 7, 7) AS ym
+            FROM orders
+            WHERE status = 'paid' AND product_id LIKE 'month:%'
+            ORDER BY ym DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [row[0] for row in rows]
+
+
+async def fetch_month_sales_breakdown(db_path: Path, *, ym: str) -> list[tuple[str, int, int]]:
+    """
+    Returns list of tuples: (sign, paid_count, total_amount_kopeks) for a given YYYY-MM month product.
+    """
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT
+                substr(product_id, length('month:' || ? || ':') + 1) AS sign,
+                COUNT(*) AS paid_count,
+                SUM(amount_kopeks) AS total_amount
+            FROM orders
+            WHERE status = 'paid' AND product_id LIKE ('month:' || ? || ':%')
+            GROUP BY sign
+            ORDER BY paid_count DESC, sign ASC
+            """,
+            (ym, ym),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [(row[0], row[1], row[2]) for row in rows]
+
+
 async def create_review_request(
     db_path: Path,
     order_id: str,

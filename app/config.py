@@ -40,11 +40,15 @@ SIGNS_RU: Dict[str, str] = {
     "pisces": "Рыбы",
 }
 
+PRICE_KOPEKS_BY_KIND: Dict[str, int] = {
+    "month": 39000,
+    "year": 99000,
+}
+
 
 class Settings(BaseSettings):
     bot_token: str = Field(..., alias="BOT_TOKEN")
     provider_token: str = Field(..., alias="PROVIDER_TOKEN")
-    price_kopeks: int = Field(39000, alias="PRICE_KOPEKS")
     currency: str = Field("RUB", alias="CURRENCY")
     media_dir: Path = Field(Path("media"), alias="MEDIA_DIR")
     db_path: Path = Field(Path("data/bot.sqlite3"), alias="DB_PATH")

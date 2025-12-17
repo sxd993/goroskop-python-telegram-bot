@@ -1,1 +1,0 @@
-$env:ENV_FILE=".env.test"; python app.py

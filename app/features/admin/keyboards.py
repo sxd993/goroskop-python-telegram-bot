@@ -28,6 +28,8 @@ ADMIN_REVIEW_IMAGE_CALLBACK = "admin:review_image"
 ADMIN_BACK_MENU_CALLBACK = "admin-back:menu"
 ADMIN_REVIEWS_PAGE_PREFIX = "admin-reviews:page"
 ADMIN_REVIEW_OPEN_PREFIX = "admin-review:open"
+ADMIN_STATS_MONTHS_PAGE_PREFIX = "admin-stats:months-page"
+ADMIN_STATS_MONTH_OPEN_PREFIX = "admin-stats:month-open"
 
 
 def build_admin_menu() -> InlineKeyboardMarkup:
@@ -144,6 +146,55 @@ def build_admin_review_detail_keyboard(*, page: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="⬅️ К списку", callback_data=f"{ADMIN_REVIEWS_PAGE_PREFIX}:{page}")],
+            [InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)],
+        ]
+    )
+
+
+def build_admin_stats_months_keyboard(
+    items: list[tuple[str, str]],
+    *,
+    page: int,
+    has_prev: bool,
+    has_next: bool,
+    include_back_to_menu: bool = True,
+) -> InlineKeyboardMarkup:
+    """
+    items: list of (button_text, ym)
+    """
+    builder = InlineKeyboardBuilder()
+    for text, ym in items:
+        builder.button(text=text, callback_data=f"{ADMIN_STATS_MONTH_OPEN_PREFIX}:{ym}:{page}")
+    builder.adjust(1)
+
+    nav: list[InlineKeyboardButton] = []
+    if has_prev:
+        nav.append(
+            InlineKeyboardButton(
+                text="⬅️ Назад",
+                callback_data=f"{ADMIN_STATS_MONTHS_PAGE_PREFIX}:{page - 1}",
+            )
+        )
+    if has_next:
+        nav.append(
+            InlineKeyboardButton(
+                text="➡️ Далее",
+                callback_data=f"{ADMIN_STATS_MONTHS_PAGE_PREFIX}:{page + 1}",
+            )
+        )
+    if nav:
+        builder.row(*nav)
+
+    if include_back_to_menu:
+        builder.row(InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK))
+
+    return builder.as_markup()
+
+
+def build_admin_stats_month_detail_keyboard(*, page: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ К месяцам", callback_data=f"{ADMIN_STATS_MONTHS_PAGE_PREFIX}:{page}")],
             [InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)],
         ]
     )

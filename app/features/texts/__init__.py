@@ -5,8 +5,16 @@ def welcome() -> str:
     return (
         "✨ Добро пожаловать в «Твоя путеводная — гороскопы» ✨\n\n"
         "🔮 Здесь ты найдёшь точные и вдохновляющие гороскопы для всех знаков зодиака.\n"
-        "Выбери гороскоп: на год или на месяц."
+        "Выбери действие на клавиатуре:"
     )
+
+
+def start_menu_hint() -> str:
+    return "Чтобы начать — нажми «Купить прогноз» на нижней панели."
+
+
+def choose_forecast_kind() -> str:
+    return "Выбери тип гороскопа:"
 
 
 def no_content() -> str:
@@ -31,6 +39,10 @@ def invalid_choice() -> str:
 
 def temporary_error() -> str:
     return "Временно не получилось, попробуй позже."
+
+
+def support_contact(link: str) -> str:
+    return f"Если нужна помощь — пиши: {link}"
 
 
 def year_unavailable() -> str:
@@ -257,6 +269,22 @@ def admin_stats_title() -> str:
 
 def admin_stats_empty() -> str:
     return "Пока нет оплаченных заказов."
+
+
+def admin_stats_choose_month(page: int) -> str:
+    return f"Статистика продаж по месяцам (страница {page}). Выбери месяц:"
+
+
+def admin_stats_month_title(month_name: str, year: str) -> str:
+    return f"Статистика продаж за {month_name} {year} (оплаченные):"
+
+
+def admin_stats_month_empty(month_name: str, year: str) -> str:
+    return f"За {month_name} {year} пока нет оплаченных заказов."
+
+
+def admin_stats_total(count: int, total_rub: float) -> str:
+    return f"Итого: {count} шт. / {total_rub:.0f} ₽"
 
 
 def admin_session_reset() -> str:

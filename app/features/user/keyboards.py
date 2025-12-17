@@ -1,9 +1,10 @@
 from pathlib import Path
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.config import SIGNS_RU
+from app.features.menu_labels import ADMIN_PANEL_LABEL, BUY_FORECAST_LABEL, SUPPORT_LABEL
 from app.services import media
 
 REVIEW_CANCEL_CALLBACK = "review:cancel"
@@ -23,6 +24,16 @@ SIGN_EMOJI = {
     "aquarius": "♒",
     "pisces": "♓",
 }
+
+
+def build_start_keyboard(*, is_admin: bool) -> ReplyKeyboardMarkup:
+    buttons = [
+        [KeyboardButton(text=BUY_FORECAST_LABEL)],
+        [KeyboardButton(text=SUPPORT_LABEL)],
+    ]
+    if is_admin:
+        buttons.append([KeyboardButton(text=ADMIN_PANEL_LABEL)])
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
 def build_layout_keyboard(*, has_year: bool, has_month: bool) -> InlineKeyboardMarkup:

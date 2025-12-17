@@ -23,7 +23,6 @@ def settings(tmp_path: Path):
         PROVIDER_TOKEN="TEST_PROVIDER",
         MEDIA_DIR=media_dir,
         DB_PATH=db_path,
-        PRICE_KOPEKS=1000,
         CURRENCY="RUB",
         ADMIN_IDS=[],
     )
