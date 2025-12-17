@@ -2,3 +2,6 @@
 .env.test
 __pycache__
 .venv
+media
+data
+.pytest_cache
