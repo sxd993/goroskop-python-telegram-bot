@@ -18,12 +18,16 @@ from app.features.admin.keyboards import (
     ADMIN_REVIEWS_CALLBACK,
     ADMIN_STATS_CALLBACK,
     ADMIN_REVIEW_IMAGE_CALLBACK,
+    ADMIN_REVIEWS_PAGE_PREFIX,
+    ADMIN_REVIEW_OPEN_PREFIX,
     build_admin_delete_confirm_keyboard,
     build_admin_menu,
     build_admin_years_keyboard,
     build_admin_months_keyboard,
     build_admin_type_keyboard,
     build_admin_signs_keyboard,
+    build_admin_reviews_list_keyboard,
+    build_admin_review_detail_keyboard,
 )
 from app.services import media, db
 from app.services.parsing import parse_product
@@ -56,6 +60,9 @@ class AdminReviewImage(StatesGroup):
     file = State()
 
 
+REVIEWS_PAGE_SIZE = 5
+
+
 def setup_handlers(settings: Settings) -> None:
     global _settings
     _settings = settings
@@ -70,6 +77,74 @@ def get_settings(bot: Bot) -> Settings:
 def is_admin(bot: Bot, user_id: Optional[int]) -> bool:
     settings = get_settings(bot)
     return bool(user_id and user_id in settings.admin_ids)
+
+
+def _product_label(product_id: str) -> str:
+    parsed = parse_product(product_id)
+    if not parsed:
+        return product_id
+    sign_name = SIGNS_RU.get(parsed["sign"], parsed["sign"])
+    if parsed["kind"] == "month" and parsed["month"]:
+        ym = f"{parsed['year']}-{parsed['month']}"
+        month_name = media.month_name_from_ym(ym) or ym
+        return f"{month_name} {parsed['year']}, {sign_name}"
+    return f"{parsed['year']} год, {sign_name}"
+
+
+def _format_dt(value: str) -> str:
+    try:
+        return dt.datetime.fromisoformat(value).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return value
+
+
+async def _edit_or_send(callback: CallbackQuery, text: str, reply_markup=None) -> None:
+    try:
+        if callback.message:
+            await callback.message.edit_text(text, reply_markup=reply_markup)
+            return
+    except Exception:
+        logger.exception("Failed to edit message for callback")
+    if callback.message:
+        await callback.message.answer(text, reply_markup=reply_markup)
+
+
+async def _show_reviews_page(callback: CallbackQuery, *, page: int) -> None:
+    if page < 1:
+        await callback.answer(texts.invalid_choice(), show_alert=True)
+        return
+
+    settings = get_settings(callback.bot)
+    offset = (page - 1) * REVIEWS_PAGE_SIZE
+    raw = await db.fetch_reviews_page(settings.db_path, limit=REVIEWS_PAGE_SIZE + 1, offset=offset)
+    if not raw:
+        await callback.answer(texts.admin_reviews_empty() if page == 1 else texts.invalid_choice(), show_alert=page != 1)
+        if page == 1:
+            await _edit_or_send(callback, texts.admin_reviews_empty(), reply_markup=build_admin_menu())
+        return
+
+    has_next = len(raw) > REVIEWS_PAGE_SIZE
+    reviews = raw[:REVIEWS_PAGE_SIZE]
+    items: list[tuple[str, str]] = []
+    for idx, review in enumerate(reviews, start=1):
+        status = review["status"]
+        icon = "✅" if status == "submitted" else "🚫"
+        created = _format_dt(review["created_at"])
+        order_tag = review["order_id"][:8]
+        title = _product_label(review["product_id"])
+        button_text = f"{idx}. {icon} {created} | {order_tag} | {title}"
+        if len(button_text) > 64:
+            button_text = f"{button_text[:61]}…"
+        items.append((button_text, review["id"]))
+
+    markup = build_admin_reviews_list_keyboard(
+        items,
+        page=page,
+        has_prev=page > 1,
+        has_next=has_next,
+    )
+    await callback.answer()
+    await _edit_or_send(callback, texts.admin_reviews_page_title(page), reply_markup=markup)
 
 
 @router.message(Command("admin"))
@@ -138,37 +213,64 @@ async def handle_admin_reviews(callback: CallbackQuery, state: FSMContext):
         await callback.answer(texts.admin_forbidden(), show_alert=True)
         return
     await state.clear()
-    reviews = await db.fetch_recent_reviews(get_settings(callback.bot).db_path)
-    if not reviews:
-        await callback.answer()
-        await callback.message.answer(texts.admin_reviews_empty())
+    await _show_reviews_page(callback, page=1)
+
+
+@router.callback_query(F.data.startswith(f"{ADMIN_REVIEWS_PAGE_PREFIX}:"))
+async def handle_admin_reviews_page(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
         return
-    lines = [texts.admin_reviews_title()]
-    for idx, review in enumerate(reviews, start=1):
-        parsed = parse_product(review["product_id"])
-        if not parsed:
-            continue
-        sign_name = SIGNS_RU.get(parsed["sign"], parsed["sign"])
-        if parsed["kind"] == "month" and parsed["month"]:
-            ym = f"{parsed['year']}-{parsed['month']}"
-            month_name = media.month_name_from_ym(ym) or ym
-            label = f"{month_name} {parsed['year']}, {sign_name}"
-        else:
-            label = f"{parsed['year']} год, {sign_name}"
-        status = review["status"]
-        text = review.get("text") or "—"
-        try:
-            created = dt.datetime.fromisoformat(review["created_at"]).strftime("%Y-%m-%d %H:%M")
-        except Exception:
-            created = review["created_at"]
-        order_tag = review["order_id"][:8]
-        base = f"{idx}) {created} | заказ {order_tag} | user {review['user_id']} | {label}"
-        if status == "declined":
-            lines.append(f"{base} — Нет отзыва")
-        else:
-            lines.append(f"{base} — {text}")
+    await state.clear()
+    raw_page = (callback.data or "").split(":")[-1]
+    try:
+        page = int(raw_page)
+    except ValueError:
+        await callback.answer(texts.invalid_choice(), show_alert=True)
+        return
+    await _show_reviews_page(callback, page=page)
+
+
+@router.callback_query(F.data.startswith(f"{ADMIN_REVIEW_OPEN_PREFIX}:"))
+async def handle_admin_review_open(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.bot, callback.from_user.id):
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+    await state.clear()
+    parts = (callback.data or "").split(":")
+    if len(parts) < 4:
+        await callback.answer(texts.invalid_choice(), show_alert=True)
+        return
+    review_id = parts[-2]
+    raw_page = parts[-1]
+    try:
+        page = int(raw_page)
+    except ValueError:
+        page = 1
+
+    settings = get_settings(callback.bot)
+    review = await db.get_review(settings.db_path, review_id)
+    if not review:
+        await callback.answer(texts.invalid_choice(), show_alert=True)
+        return
+
+    created = _format_dt(review["created_at"])
+    order_tag = review["order_id"][:8]
+    title = _product_label(review["product_id"])
+    text = review.get("text") or "—"
     await callback.answer()
-    await callback.message.answer("\n".join(lines))
+    await _edit_or_send(
+        callback,
+        texts.admin_review_detail(
+            title=title,
+            created=created,
+            order_tag=order_tag,
+            user_id=review["user_id"],
+            status=review["status"],
+            text=text,
+        ),
+        reply_markup=build_admin_review_detail_keyboard(page=page),
+    )
 
 
 @router.callback_query(F.data == ADMIN_BACK_MENU_CALLBACK)

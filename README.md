@@ -30,6 +30,21 @@
    python app.py
    ```
 
+## Запуск с разными env
+
+По умолчанию настройки читаются из `.env`. Для production есть шаблон `.env.prod.example`.
+
+Варианты переключения:
+
+- Через `APP_ENV` (берёт файл `.env.<APP_ENV>`):
+  - PowerShell: ` $env:APP_ENV="prod"; python app.py `
+  - PowerShell: ` $env:APP_ENV="test"; python app.py `
+- Через `ENV_FILE` (явный путь к env-файлу):
+  - PowerShell: ` $env:ENV_FILE=".env.prod"; python app.py `
+  - PowerShell: ` $env:ENV_FILE="D:\\path\\to\\.env.custom"; python app.py `
+- Через переменные окружения без файла (самый простой для CI):
+  - PowerShell: ` $env:BOT_TOKEN="..."; $env:PROVIDER_TOKEN="..."; python app.py `
+
 ## Структура кода
 
 - `app.py` — точка входа: загрузка настроек, инициализация БД, сборка бота.
@@ -43,3 +58,21 @@
 - `app/keyboards/` — инлайн-клавиатуры для навигации и оплаты.
 - `app/texts.py` — тексты и билдеры сообщений.
 - `app/handlers/` — aiogram-роутеры и обработчики.
+
+## Деплой на VPS (PM2, production)
+
+1. Установи зависимости на сервере: `nodejs`+`npm` (если `pm2` ещё не установлен).
+2. Клонируй репозиторий и зайди в папку:
+   ```bash
+   git clone <repo_url>
+   cd goroskop-python-telegram-bot
+   ```
+3. Создай `.env.prod`:
+   ```bash
+   cp .env.prod.example .env.prod
+   nano .env.prod
+   ```
+4. Одна команда (поставит зависимости и запустит PM2-процесс `goroskop-bot-prod`):
+   ```bash
+   bash prod.sh
+   ```

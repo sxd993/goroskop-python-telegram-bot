@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Dict, List
 
@@ -96,14 +97,65 @@ class Settings(BaseSettings):
 
         return (
             init_settings,
-            _NoJsonEnvSource(settings_cls),
-            _NoJsonDotEnvSource(settings_cls),
+            _NoJsonEnvSource(
+                settings_cls,
+                case_sensitive=env_settings.case_sensitive,
+                env_prefix=env_settings.env_prefix,
+                env_nested_delimiter=env_settings.env_nested_delimiter,
+                env_ignore_empty=env_settings.env_ignore_empty,
+                env_parse_none_str=env_settings.env_parse_none_str,
+            ),
+            _NoJsonDotEnvSource(
+                settings_cls,
+                env_file=dotenv_settings.env_file,
+                env_file_encoding=dotenv_settings.env_file_encoding,
+                case_sensitive=dotenv_settings.case_sensitive,
+                env_prefix=dotenv_settings.env_prefix,
+                env_nested_delimiter=dotenv_settings.env_nested_delimiter,
+                env_ignore_empty=dotenv_settings.env_ignore_empty,
+                env_parse_none_str=dotenv_settings.env_parse_none_str,
+            ),
             file_secret_settings,
         )
 
 
 def load_settings() -> Settings:
-    settings = Settings()
+    env_file = _resolve_env_file()
+    settings = Settings(_env_file=str(env_file)) if env_file is not None else Settings()
     settings.media_dir = settings.media_dir.expanduser().resolve()
     settings.db_path = settings.db_path.expanduser().resolve()
     return settings
+
+
+def _resolve_env_file(explicit: str | Path | None = None) -> Path | None:
+    """
+    Allow switching env files without renaming:
+    - explicit argument (internal API)
+    - ENV_FILE=/path/to/.env.something
+    - APP_ENV=test -> .env.test
+
+    If nothing is set, fall back to SettingsConfigDict(env_file=".env").
+    """
+
+    candidate: str | Path | None = explicit
+    if candidate is None:
+        candidate = os.getenv("ENV_FILE") or None
+    if candidate is None:
+        app_env = os.getenv("APP_ENV") or None
+        if app_env:
+            candidate = f".env.{app_env}"
+
+    if candidate is None:
+        return None
+
+    path = Path(candidate).expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Env file not found: {path}. "
+            "Set ENV_FILE to an existing path or APP_ENV to match an existing .env.<name>."
+        )
+
+    return path

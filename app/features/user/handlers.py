@@ -3,7 +3,7 @@ from pathlib import Path
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery, ForceReply
+from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
 
 from app.config import Settings, SIGNS_RU
 from app.features.user.keyboards import (
@@ -12,6 +12,9 @@ from app.features.user.keyboards import (
     build_months_keyboard,
     build_pay_keyboard,
     build_review_keyboard,
+    build_review_cancel_keyboard,
+    REVIEW_CANCEL_CALLBACK,
+    REVIEW_MENU_CALLBACK,
     build_year_signs_keyboard,
     build_years_keyboard,
 )
@@ -70,10 +73,8 @@ async def _edit_or_send(message: Message, text: str, reply_markup):
         await message.answer(text, reply_markup=reply_markup)
 
 
-@router.message(Command("start"))
-async def handle_start(message: Message):
+async def _show_main_menu(message: Message) -> None:
     settings = get_settings(message.bot)
-    await ensure_user(message.bot, message.from_user.id)
     year_years = media.available_yearly_years(settings.media_dir)
     month_years = media.available_monthly_years(settings.media_dir)
     if not year_years and not month_years:
@@ -81,6 +82,16 @@ async def handle_start(message: Message):
         return
     keyboard = build_layout_keyboard(has_year=bool(year_years), has_month=bool(month_years))
     await message.answer(texts.welcome(), reply_markup=keyboard)
+
+
+@router.message(Command("start"))
+async def handle_start(message: Message):
+    await ensure_user(message.bot, message.from_user.id)
+    db_path = get_db_path(message.bot)
+    user_state = await state_machine.get_user_state(db_path, message.from_user.id)
+    if user_state == UserState.REVIEW_PENDING:
+        await state_machine.ensure_idle(db_path, message.from_user.id)
+    await _show_main_menu(message)
 
 
 @router.callback_query(F.data.startswith("mode:"))
@@ -372,6 +383,10 @@ async def handle_pay(callback: CallbackQuery):
     media_dir = settings.media_dir
     db_path = get_db_path(callback.bot)
     await ensure_user(callback.bot, callback.from_user.id)
+    user_state = await state_machine.get_user_state(db_path, callback.from_user.id)
+    if user_state == UserState.REVIEW_PENDING:
+        await callback.message.answer(texts.review_request(), reply_markup=build_review_cancel_keyboard())
+        return
     content_path: Path | None = None
     if parsed["kind"] == "month" and parsed["month"]:
         ym = f"{parsed['year']}-{parsed['month']}"
@@ -601,7 +616,7 @@ async def handle_review_start(callback: CallbackQuery):
         await callback.message.edit_reply_markup()
     except Exception:
         pass
-    await callback.message.answer(texts.review_request(), reply_markup=ForceReply(selective=True))
+    await callback.message.answer(texts.review_request(), reply_markup=build_review_cancel_keyboard())
 
 
 @router.callback_query(F.data.startswith("review:skip:"))
@@ -637,6 +652,15 @@ async def handle_review_skip(callback: CallbackQuery):
         pass
 
 
+@router.callback_query(F.data.in_({REVIEW_CANCEL_CALLBACK, REVIEW_MENU_CALLBACK}))
+async def handle_review_cancel(callback: CallbackQuery):
+    await callback.answer()
+    db_path = get_db_path(callback.bot)
+    await state_machine.ensure_idle(db_path, callback.from_user.id)
+    await callback.message.answer(texts.review_cancelled())
+    await _show_main_menu(callback.message)
+
+
 @router.message(F.text)
 async def handle_review_text(message: Message):
     if not message.text or message.text.startswith("/"):
@@ -649,7 +673,7 @@ async def handle_review_text(message: Message):
     if user_state != UserState.REVIEW_PENDING:
         return
     if len(review_text) < 100:
-        await message.answer(texts.review_request())
+        await message.answer(texts.review_request(), reply_markup=build_review_cancel_keyboard())
         return
     pending = await db.get_pending_review_for_user(db_path, message.from_user.id)
     if not pending:

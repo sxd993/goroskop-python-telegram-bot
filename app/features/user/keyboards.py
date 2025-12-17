@@ -6,13 +6,31 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.config import SIGNS_RU
 from app.services import media
 
+REVIEW_CANCEL_CALLBACK = "review:cancel"
+REVIEW_MENU_CALLBACK = "review:menu"
+
+SIGN_EMOJI = {
+    "aries": "♈",
+    "taurus": "♉",
+    "gemini": "♊",
+    "cancer": "♋",
+    "leo": "♌",
+    "virgo": "♍",
+    "libra": "♎",
+    "scorpio": "♏",
+    "sagittarius": "♐",
+    "capricorn": "♑",
+    "aquarius": "♒",
+    "pisces": "♓",
+}
+
 
 def build_layout_keyboard(*, has_year: bool, has_month: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if has_year:
-        builder.button(text="Годовой гороскоп", callback_data="mode:year")
+        builder.button(text="📅 Годовой гороскоп", callback_data="mode:year")
     if has_month:
-        builder.button(text="Месячный гороскоп", callback_data="mode:month")
+        builder.button(text="🗓️ Месячный гороскоп", callback_data="mode:month")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -20,7 +38,7 @@ def build_layout_keyboard(*, has_year: bool, has_month: bool) -> InlineKeyboardM
 def build_years_keyboard(years, prefix: str, back: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for year in years:
-        builder.button(text=year, callback_data=f"{prefix}:{year}")
+        builder.button(text=f"📅 {year}", callback_data=f"{prefix}:{year}")
     builder.adjust(3)
     if back:
         builder.button(text="⬅️ Назад", callback_data=back)
@@ -33,7 +51,7 @@ def build_months_keyboard(media_dir: Path, year: str, back: str | None = None) -
     for ym in media.months_for_year(media_dir, year):
         name = media.month_name_from_ym(ym)
         if name:
-            builder.button(text=name, callback_data=f"m-month:{ym}")
+            builder.button(text=f"🗓️ {name}", callback_data=f"m-month:{ym}")
     builder.adjust(3)
     if back:
         builder.button(text="⬅️ Назад", callback_data=back)
@@ -45,7 +63,8 @@ def build_month_signs_keyboard(media_dir: Path, ym: str, back: str | None = None
     builder = InlineKeyboardBuilder()
     for sign in media.available_month_signs(media_dir, ym):
         name = SIGNS_RU[sign]
-        builder.button(text=name, callback_data=f"m-sign:{ym}:{sign}")
+        emoji = SIGN_EMOJI.get(sign, "🔮")
+        builder.button(text=f"{emoji} {name}", callback_data=f"m-sign:{ym}:{sign}")
     builder.adjust(3)
     if back:
         builder.button(text="⬅️ Назад", callback_data=back)
@@ -57,7 +76,8 @@ def build_year_signs_keyboard(media_dir: Path, year: str, back: str | None = Non
     builder = InlineKeyboardBuilder()
     for sign in media.available_year_signs(media_dir, year):
         name = SIGNS_RU[sign]
-        builder.button(text=name, callback_data=f"y-sign:{year}:{sign}")
+        emoji = SIGN_EMOJI.get(sign, "🔮")
+        builder.button(text=f"{emoji} {name}", callback_data=f"y-sign:{year}:{sign}")
     builder.adjust(3)
     if back:
         builder.button(text="⬅️ Назад", callback_data=back)
@@ -66,7 +86,7 @@ def build_year_signs_keyboard(media_dir: Path, year: str, back: str | None = Non
 
 
 def build_pay_keyboard(product_id: str, back: str | None = None) -> InlineKeyboardMarkup:
-    buttons = [[InlineKeyboardButton(text="Оплатить", callback_data=f"pay:{product_id}")]]
+    buttons = [[InlineKeyboardButton(text="💳 Оплатить", callback_data=f"pay:{product_id}")]]
     if back:
         buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=back)])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -74,7 +94,16 @@ def build_pay_keyboard(product_id: str, back: str | None = None) -> InlineKeyboa
 
 def build_review_keyboard(order_id: str) -> InlineKeyboardMarkup:
     buttons = [
-        [InlineKeyboardButton(text="Оставить отзыв", callback_data=f"review:start:{order_id}")],
-        [InlineKeyboardButton(text="Пропустить", callback_data=f"review:skip:{order_id}")],
+        [InlineKeyboardButton(text="✍️ Оставить отзыв", callback_data=f"review:start:{order_id}")],
+        [InlineKeyboardButton(text="⏭️ Пропустить", callback_data=f"review:skip:{order_id}")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def build_review_cancel_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data=REVIEW_CANCEL_CALLBACK)],
+            [InlineKeyboardButton(text="🏠 В меню", callback_data=REVIEW_MENU_CALLBACK)],
+        ]
+    )

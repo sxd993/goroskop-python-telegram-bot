@@ -334,6 +334,31 @@ async def fetch_recent_reviews(db_path: Path, limit: int = 30) -> list[Review]:
             return [Review(dict(row)) for row in rows]
 
 
+async def fetch_reviews_page(db_path: Path, limit: int, offset: int) -> list[Review]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT *
+            FROM reviews
+            WHERE status IN ('submitted', 'declined')
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [Review(dict(row)) for row in rows]
+
+
+async def get_review(db_path: Path, review_id: str) -> Optional[Review]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM reviews WHERE id = ?", (review_id,)) as cursor:
+            row = await cursor.fetchone()
+            return Review(dict(row)) if row else None
+
+
 async def get_user(db_path: Path, user_id: int) -> Optional[User]:
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row

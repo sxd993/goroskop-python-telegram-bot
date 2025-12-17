@@ -1,6 +1,4 @@
-.env
+.env.prod
+.env.test
 __pycache__
 .venv
-data/
-media
-data

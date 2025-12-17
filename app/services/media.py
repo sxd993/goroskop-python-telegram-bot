@@ -205,6 +205,26 @@ def _cleanup_empty_dir(path: Path) -> None:
         pass
 
 
+def _cleanup_month_tree(media_dir: Path, ym: str, sign: str) -> None:
+    match = parse_year_month(ym)
+    if not match:
+        return
+    month_dir = _root_dir(media_dir, _MONTH_DIRNAME) / match.group("year") / match.group("month")
+    sign_dir = month_dir / sign
+    _cleanup_empty_dir(sign_dir)
+    _cleanup_empty_dir(month_dir)
+    _cleanup_empty_dir(month_dir.parent)
+
+
+def _cleanup_year_tree(media_dir: Path, year: str, sign: str) -> None:
+    if not is_valid_year(year):
+        return
+    year_dir = _root_dir(media_dir, _YEAR_DIRNAME) / year
+    sign_dir = year_dir / sign
+    _cleanup_empty_dir(sign_dir)
+    _cleanup_empty_dir(year_dir)
+
+
 def delete_month_content(media_dir: Path, ym: str, sign: str) -> bool:
     path = find_month_content_path(media_dir, ym, sign)
     if not path:
@@ -215,6 +235,7 @@ def delete_month_content(media_dir: Path, ym: str, sign: str) -> bool:
         return False
     if path.parent.name == sign:
         _cleanup_empty_dir(path.parent)
+    _cleanup_month_tree(media_dir, ym, sign)
     return True
 
 
@@ -228,6 +249,7 @@ def delete_year_content(media_dir: Path, year: str, sign: str) -> bool:
         return False
     if path.parent.name == sign:
         _cleanup_empty_dir(path.parent)
+    _cleanup_year_tree(media_dir, year, sign)
     return True
 
 

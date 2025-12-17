@@ -289,7 +289,10 @@ def review_prompt() -> str:
 
 
 def review_request() -> str:
-    return "Напиши отзыв (минимум 100 символов). Ответ увидим только мы."
+    return (
+        "Напиши отзыв (минимум 100 символов). Ответ увидим только мы.\n\n"
+        "Если передумал(а) — нажми «Отмена»."
+    )
 
 
 def review_thanks() -> str:
@@ -298,6 +301,10 @@ def review_thanks() -> str:
 
 def review_expired() -> str:
     return "Отзыв недоступен или уже оставлен."
+
+
+def review_cancelled() -> str:
+    return "Ок, отменил(а) написание отзыва."
 
 
 def payment_success() -> str:
@@ -318,6 +325,22 @@ def admin_reviews_title() -> str:
 
 def admin_reviews_empty() -> str:
     return "Пока нет отзывов."
+
+
+def admin_reviews_page_title(page: int) -> str:
+    return f"Отзывы (страница {page}). Выбери отзыв:"
+
+
+def admin_review_detail(title: str, created: str, order_tag: str, user_id: int, status: str, text: str) -> str:
+    status_label = "Оставлен" if status == "submitted" else "Нет отзыва"
+    return (
+        f"{title}\n"
+        f"Дата: {created}\n"
+        f"Заказ: {order_tag}\n"
+        f"User: {user_id}\n"
+        f"Статус: {status_label}\n\n"
+        f"{text}"
+    )
 
 
 def admin_review_image_start() -> str:
