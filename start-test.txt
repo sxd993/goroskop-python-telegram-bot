@@ -4,4 +4,4 @@ Window:
 
 Mac:
 1. .venv/bin/activate
-2. $env:ENV_FILE=".env.test"; python app.py
+2. ENV_FILE=.env.test python app.py
