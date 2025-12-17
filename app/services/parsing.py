@@ -70,13 +70,15 @@ def parse_pay_data(data: str) -> Optional[str]:
     return data.split(":", maxsplit=1)[1]
 
 
-def parse_invoice_payload(payload: str) -> Optional[Tuple[ProductInfo, int]]:
+def parse_invoice_payload(payload: str) -> Optional[Tuple[ProductInfo, int, Optional[str]]]:
     """
-    Payload format: "<product_id>|<user_id>"
+    Payload format: "<product_id>|<user_id>|<order_id?>"
     """
-    if "|" not in payload:
+    parts = payload.split("|")
+    if len(parts) not in (2, 3):
         return None
-    product_raw, user_raw = payload.split("|", maxsplit=1)
+    product_raw, user_raw = parts[0], parts[1]
+    order_id = parts[2] if len(parts) == 3 else None
     product = parse_product(product_raw)
     if not product:
         return None
@@ -84,7 +86,7 @@ def parse_invoice_payload(payload: str) -> Optional[Tuple[ProductInfo, int]]:
         user_id = int(user_raw)
     except ValueError:
         return None
-    return product, user_id
+    return product, user_id, order_id
 
 
 def parse_product(product_id: str) -> Optional[ProductInfo]:

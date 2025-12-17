@@ -1,6 +1,14 @@
 from typing import Optional, TypedDict
 
 
+class User(TypedDict):
+    user_id: int
+    state: str
+    last_order_id: Optional[str]
+    created_at: str
+    updated_at: str
+
+
 class Order(TypedDict):
     id: str
     user_id: int
@@ -23,3 +31,15 @@ class Review(TypedDict):
     text: Optional[str]
     created_at: str
     answered_at: Optional[str]
+
+
+class Payment(TypedDict):
+    id: str
+    order_id: str
+    provider_tx_id: str
+    status: str
+    amount_kopeks: int
+    currency: str
+    payload: str
+    created_at: str
+    updated_at: str

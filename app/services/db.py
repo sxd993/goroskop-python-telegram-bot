@@ -5,7 +5,7 @@ from typing import Optional
 
 import aiosqlite
 
-from app.models import Order, Review
+from app.models import Order, Payment, Review, User
 
 
 CREATE_TABLE_SQL = """
@@ -20,6 +20,32 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at TEXT NOT NULL,
     paid_at TEXT,
     delivered_at TEXT
+);
+"""
+
+CREATE_USERS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    state TEXT NOT NULL,
+    last_order_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(last_order_id) REFERENCES orders(id)
+);
+"""
+
+CREATE_PAYMENTS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS payments (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    provider_tx_id TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL,
+    amount_kopeks INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(order_id) REFERENCES orders(id)
 );
 """
 
@@ -46,6 +72,8 @@ async def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(db_path) as db:
         await db.execute(CREATE_TABLE_SQL)
+        await db.execute(CREATE_USERS_TABLE_SQL)
+        await db.execute(CREATE_PAYMENTS_TABLE_SQL)
         await db.execute(CREATE_REVIEWS_TABLE_SQL)
         await db.commit()
 
@@ -149,6 +177,19 @@ async def mark_paid(
             WHERE id = ?
             """,
             (paid_at, telegram_charge_id, order_id),
+        )
+        await db.commit()
+
+
+async def mark_payment_failed(db_path: Path, order_id: str) -> None:
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            UPDATE orders
+            SET status = 'failed'
+            WHERE id = ? AND status != 'paid'
+            """,
+            (order_id,),
         )
         await db.commit()
 
@@ -291,3 +332,120 @@ async def fetch_recent_reviews(db_path: Path, limit: int = 30) -> list[Review]:
         ) as cursor:
             rows = await cursor.fetchall()
             return [Review(dict(row)) for row in rows]
+
+
+async def get_user(db_path: Path, user_id: int) -> Optional[User]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            return User(dict(row)) if row else None
+
+
+async def ensure_user(db_path: Path, user_id: int, state: str, last_order_id: Optional[str]) -> User:
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            INSERT INTO users (user_id, state, last_order_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO NOTHING
+            """,
+            (user_id, state, last_order_id, now, now),
+        )
+        await db.commit()
+    user = await get_user(db_path, user_id)
+    if user:
+        return user
+    return {
+        "user_id": user_id,
+        "state": state,
+        "last_order_id": last_order_id,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+async def update_user_state(db_path: Path, user_id: int, state: str, last_order_id: Optional[str]) -> User:
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            UPDATE users
+            SET state = ?,
+                last_order_id = ?,
+                updated_at = ?
+            WHERE user_id = ?
+            """,
+            (state, last_order_id, now, user_id),
+        )
+        await db.commit()
+    user = await get_user(db_path, user_id)
+    if not user:
+        return {
+            "user_id": user_id,
+            "state": state,
+            "last_order_id": last_order_id,
+            "created_at": now,
+            "updated_at": now,
+        }
+    return user
+
+
+async def create_payment(
+    db_path: Path,
+    order_id: str,
+    provider_tx_id: str,
+    status: str,
+    amount_kopeks: int,
+    currency: str,
+    payload: str,
+) -> Payment:
+    now = _now_iso()
+    payment_id = str(uuid.uuid4())
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            INSERT INTO payments (id, order_id, provider_tx_id, status, amount_kopeks, currency, payload, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (payment_id, order_id, provider_tx_id, status, amount_kopeks, currency, payload, now, now),
+        )
+        await db.commit()
+    return {
+        "id": payment_id,
+        "order_id": order_id,
+        "provider_tx_id": provider_tx_id,
+        "status": status,
+        "amount_kopeks": amount_kopeks,
+        "currency": currency,
+        "payload": payload,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+async def get_payment_by_provider_id(db_path: Path, provider_tx_id: str) -> Optional[Payment]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM payments WHERE provider_tx_id = ?",
+            (provider_tx_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return Payment(dict(row)) if row else None
+
+
+async def update_payment_status(db_path: Path, provider_tx_id: str, status: str) -> None:
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            UPDATE payments
+            SET status = ?,
+                updated_at = ?
+            WHERE provider_tx_id = ?
+            """,
+            (status, now, provider_tx_id),
+        )
+        await db.commit()

@@ -17,7 +17,10 @@ from app.features.user.keyboards import (
 )
 from app.models import Order
 from app.services import db, media
-from app.services.messaging import send_content
+from app.services.messaging import send_content, send_message_safe
+from app.services import payments, state_machine
+from app.services.payments import PaymentStatus
+from app.services.state_machine import InvalidStateTransition, UserState
 from app.services.parsing import (
     parse_layout_choice,
     parse_month_data,
@@ -53,6 +56,10 @@ def get_db_path(bot: Bot) -> Path:
     return get_settings(bot).db_path
 
 
+async def ensure_user(bot: Bot, user_id: int) -> None:
+    await state_machine.get_user_state(get_db_path(bot), user_id)
+
+
 async def _edit_or_send(message: Message, text: str, reply_markup):
     """
     Try to keep навигацию в одном окне: редактируем текущее сообщение, при ошибке шлем новое.
@@ -66,6 +73,7 @@ async def _edit_or_send(message: Message, text: str, reply_markup):
 @router.message(Command("start"))
 async def handle_start(message: Message):
     settings = get_settings(message.bot)
+    await ensure_user(message.bot, message.from_user.id)
     year_years = media.available_yearly_years(settings.media_dir)
     month_years = media.available_monthly_years(settings.media_dir)
     if not year_years and not month_years:
@@ -321,7 +329,7 @@ async def handle_back_year_signs(callback: CallbackQuery):
     await _edit_or_send(callback.message, texts.year_sign_prompt(year), reply_markup=keyboard)
 
 
-async def send_invoice(callback: CallbackQuery, product_id: str) -> None:
+async def send_invoice(callback: CallbackQuery, product_id: str, order_id: str) -> None:
     settings = get_settings(callback.bot)
     parsed = parse_product(product_id)
     if not parsed:
@@ -337,7 +345,7 @@ async def send_invoice(callback: CallbackQuery, product_id: str) -> None:
         title = f"{parsed['year']} год"
         description = f"Годовой гороскоп для знака {sign_name}"
     prices = [LabeledPrice(label="Гороскоп", amount=settings.price_kopeks)]
-    payload = f"{product_id}|{callback.from_user.id}"
+    payload = f"{product_id}|{callback.from_user.id}|{order_id}"
     await callback.message.answer_invoice(
         title=title,
         description=description,
@@ -362,6 +370,8 @@ async def handle_pay(callback: CallbackQuery):
         return
     settings = get_settings(callback.bot)
     media_dir = settings.media_dir
+    db_path = get_db_path(callback.bot)
+    await ensure_user(callback.bot, callback.from_user.id)
     content_path: Path | None = None
     if parsed["kind"] == "month" and parsed["month"]:
         ym = f"{parsed['year']}-{parsed['month']}"
@@ -377,7 +387,27 @@ async def handle_pay(callback: CallbackQuery):
     if not content_path:
         await callback.message.answer(texts.content_missing())
         return
-    await send_invoice(callback, product_id)
+    order = await db.create_order(db_path, callback.from_user.id, product_id, settings.price_kopeks, settings.currency)
+    try:
+        await state_machine.set_order_initiated(db_path, callback.from_user.id, order["id"])
+    except InvalidStateTransition:
+        logger.warning("Order initiation rejected by state machine user_id=%s", callback.from_user.id)
+        await send_message_safe(callback.bot, callback.message.chat.id, texts.temporary_error())
+        return
+    try:
+        await send_invoice(callback, product_id, order["id"])
+    except Exception:
+        logger.exception("Failed to send invoice order_id=%s user_id=%s", order["id"], callback.from_user.id)
+        await state_machine.ensure_idle(db_path, callback.from_user.id)
+        await send_message_safe(callback.bot, callback.message.chat.id, texts.temporary_error())
+        return
+    await db.mark_invoice_sent(db_path, order["id"])
+    try:
+        await state_machine.set_payment_pending(db_path, callback.from_user.id, order["id"])
+    except InvalidStateTransition:
+        logger.warning("Payment pending transition rejected user_id=%s order_id=%s", callback.from_user.id, order["id"])
+        await send_message_safe(callback.bot, callback.message.chat.id, texts.temporary_error())
+        await state_machine.ensure_idle(db_path, callback.from_user.id)
 
 
 @router.pre_checkout_query()
@@ -387,10 +417,28 @@ async def handle_pre_checkout(query: PreCheckoutQuery):
         await query.answer(ok=False, error_message="Заказ недоступен.")
         logger.info("Pre-checkout rejected user=%s payload=%s", query.from_user.id, query.invoice_payload)
         return
-    product, user_id = parsed
+    product, user_id, order_id = parsed
     if user_id != query.from_user.id:
         await query.answer(ok=False, error_message="Заказ недоступен.")
         logger.info("Pre-checkout rejected user mismatch=%s payload=%s", query.from_user.id, query.invoice_payload)
+        return
+    if not order_id:
+        await query.answer(ok=False, error_message="Заказ недоступен.")
+        logger.info("Pre-checkout rejected order missing user=%s payload=%s", query.from_user.id, query.invoice_payload)
+        return
+    order = await db.get_order(get_db_path(query.bot), order_id)
+    if not order or order["user_id"] != query.from_user.id:
+        await query.answer(ok=False, error_message="Заказ недоступен.")
+        logger.info("Pre-checkout rejected order not found user=%s payload=%s", query.from_user.id, query.invoice_payload)
+        return
+    product_id = (
+        media.build_month_product_id(f"{product['year']}-{product['month']}", product["sign"])
+        if product["kind"] == "month" and product["month"]
+        else media.build_year_product_id(product["year"], product["sign"])
+    )
+    if not product_id or order["product_id"] != product_id:
+        await query.answer(ok=False, error_message="Заказ недоступен.")
+        logger.info("Pre-checkout rejected order mismatch user=%s payload=%s", query.from_user.id, query.invoice_payload)
         return
     settings = get_settings(query.bot)
     media_dir = settings.media_dir
@@ -417,6 +465,11 @@ async def handle_pre_checkout(query: PreCheckoutQuery):
 
 
 async def deliver_file(bot: Bot, chat_id: int, order: Order, content_path: Path) -> bool:
+    db_path = get_db_path(bot)
+    user_id = order.get("user_id", chat_id)
+    if order.get("delivered_at"):
+        logger.info("Order already delivered user=%s order_id=%s", user_id, order["id"])
+        return True
     parsed = parse_product(order["product_id"])
     if not parsed:
         await bot.send_message(chat_id, texts.invalid_product())
@@ -430,13 +483,21 @@ async def deliver_file(bot: Bot, chat_id: int, order: Order, content_path: Path)
         caption = f"{parsed['year']} год, {sign_name}"
     delivered = await send_content(bot, chat_id, content_path, caption)
     if delivered:
-        await db.mark_delivered(get_db_path(bot), order["id"])
-        logger.info("Content sent user=%s order_id=%s", chat_id, order["id"])
+        await db.mark_delivered(db_path, order["id"])
+        try:
+            await state_machine.set_delivered(db_path, user_id, order["id"])
+            await state_machine.set_review_pending(db_path, user_id, order["id"])
+        except InvalidStateTransition:
+            logger.warning("Cannot move user to delivered/review_pending user_id=%s", user_id)
+        logger.info("Content sent user=%s order_id=%s", user_id, order["id"])
+        await prompt_review(bot, chat_id, order)
+    else:
+        await send_message_safe(bot, chat_id, texts.temporary_error())
     return delivered
 
 
 async def prompt_review(bot: Bot, chat_id: int, order: Order) -> None:
-    await bot.send_message(chat_id, texts.review_prompt(), reply_markup=build_review_keyboard(order["id"]))
+    await send_message_safe(bot, chat_id, texts.review_prompt(), reply_markup=build_review_keyboard(order["id"]))
 
 
 @router.message(F.successful_payment)
@@ -448,8 +509,17 @@ async def handle_successful_payment(message: Message):
     if not parsed_payload:
         await message.answer(texts.invalid_product())
         return
-    product, user_id = parsed_payload
+    product, user_id, order_id = parsed_payload
     if user_id != message.from_user.id:
+        await message.answer(texts.order_not_found())
+        return
+    await ensure_user(message.bot, message.from_user.id)
+    if not order_id:
+        await message.answer(texts.order_not_found())
+        return
+    db_path = get_db_path(message.bot)
+    order = await db.get_order(db_path, order_id)
+    if not order or order["user_id"] != message.from_user.id:
         await message.answer(texts.order_not_found())
         return
     media_dir = settings.media_dir
@@ -467,39 +537,63 @@ async def handle_successful_payment(message: Message):
         if product["kind"] == "month" and product["month"]
         else media.build_year_product_id(product["year"], product["sign"])
     )
-    if not product_id:
+    if not product_id or order["product_id"] != product_id:
         await message.answer(texts.invalid_product())
         return
-    order = await db.create_paid_order(
-        settings.db_path,
-        message.from_user.id,
-        product_id,
-        settings.price_kopeks,
-        settings.currency,
-        payment.telegram_payment_charge_id,
+    result = await payments.handle_webhook(
+        db_path,
+        order_id=order_id,
+        provider_tx_id=payment.telegram_payment_charge_id,
+        status=PaymentStatus.SUCCESS,
+        amount_kopeks=payment.total_amount,
+        currency=payment.currency,
+        payload=payload,
     )
+    if not result["applied"]:
+        if result["payment"]["status"] == PaymentStatus.FAILED.value:
+            await message.answer(texts.payment_failed())
+            return
+        await message.answer(texts.payment_duplicate())
+        order = await db.get_order(db_path, order_id) or order
+        if order.get("delivered_at"):
+            return
+        if order.get("status") != "paid":
+            return
+    else:
+        try:
+            await state_machine.set_paid(db_path, message.from_user.id, order_id)
+        except InvalidStateTransition:
+            logger.warning("Unexpected paid transition user_id=%s order_id=%s", message.from_user.id, order_id)
+    order = await db.get_order(db_path, order_id) or order
     logger.info(
         "Payment successful user=%s order_id=%s payload=%s charge_id=%s",
         message.from_user.id,
-        order["id"],
+        order_id,
         payload,
         payment.telegram_payment_charge_id,
     )
     await message.answer(texts.payment_success())
     delivered = await deliver_file(message.bot, message.chat.id, order, content_path)
-    if delivered:
-        await prompt_review(message.bot, message.chat.id, order)
 
 
 @router.callback_query(F.data.startswith("review:start:"))
 async def handle_review_start(callback: CallbackQuery):
     order_id = (callback.data or "").split(":", maxsplit=2)[-1]
     await callback.answer()
-    order = await db.get_order(get_db_path(callback.bot), order_id)
+    db_path = get_db_path(callback.bot)
+    user_state = await state_machine.get_user_state(db_path, callback.from_user.id)
+    if user_state != UserState.REVIEW_PENDING:
+        await callback.message.answer(texts.review_expired())
+        return
+    user = await db.get_user(db_path, callback.from_user.id)
+    if user and user.get("last_order_id") and user["last_order_id"] != order_id:
+        await callback.message.answer(texts.review_expired())
+        return
+    order = await db.get_order(db_path, order_id)
     if not order or order["user_id"] != callback.from_user.id:
         await callback.message.answer(texts.review_expired())
         return
-    review = await db.create_review_request(get_db_path(callback.bot), order_id, order["user_id"], order["product_id"])
+    review = await db.create_review_request(db_path, order_id, order["user_id"], order["product_id"])
     if review["status"] != "pending":
         await callback.message.answer(texts.review_expired())
         return
@@ -514,15 +608,29 @@ async def handle_review_start(callback: CallbackQuery):
 async def handle_review_skip(callback: CallbackQuery):
     order_id = (callback.data or "").split(":", maxsplit=2)[-1]
     await callback.answer()
-    order = await db.get_order(get_db_path(callback.bot), order_id)
+    db_path = get_db_path(callback.bot)
+    user_state = await state_machine.get_user_state(db_path, callback.from_user.id)
+    if user_state != UserState.REVIEW_PENDING:
+        await callback.message.answer(texts.review_expired())
+        return
+    user = await db.get_user(db_path, callback.from_user.id)
+    if user and user.get("last_order_id") and user["last_order_id"] != order_id:
+        await callback.message.answer(texts.review_expired())
+        return
+    order = await db.get_order(db_path, order_id)
     if not order or order["user_id"] != callback.from_user.id:
         await callback.message.answer(texts.review_expired())
         return
-    review = await db.create_review_request(get_db_path(callback.bot), order_id, order["user_id"], order["product_id"])
+    review = await db.create_review_request(db_path, order_id, order["user_id"], order["product_id"])
     if review["status"] == "submitted":
         await callback.message.answer(texts.review_expired())
         return
-    await db.mark_review_declined(get_db_path(callback.bot), order_id, order["user_id"], order["product_id"])
+    await db.mark_review_declined(db_path, order_id, order["user_id"], order["product_id"])
+    try:
+        await state_machine.set_reviewed(db_path, callback.from_user.id, order_id)
+        await state_machine.ensure_idle(db_path, callback.from_user.id)
+    except InvalidStateTransition:
+        logger.warning("Skip review transition blocked user_id=%s order_id=%s", callback.from_user.id, order_id)
     try:
         await callback.message.edit_reply_markup()
     except Exception:
@@ -536,17 +644,26 @@ async def handle_review_text(message: Message):
     review_text = message.text.strip()
     if not review_text:
         return
+    db_path = get_db_path(message.bot)
+    user_state = await state_machine.get_user_state(db_path, message.from_user.id)
+    if user_state != UserState.REVIEW_PENDING:
+        return
     if len(review_text) < 100:
         await message.answer(texts.review_request())
         return
-    pending = await db.get_pending_review_for_user(get_db_path(message.bot), message.from_user.id)
+    pending = await db.get_pending_review_for_user(db_path, message.from_user.id)
     if not pending:
         return
-    await db.mark_review_submitted(get_db_path(message.bot), pending["order_id"], review_text)
+    await db.mark_review_submitted(db_path, pending["order_id"], review_text)
     parsed = parse_product(pending["product_id"])
     if parsed:
         reward_path = media.find_review_image(get_settings(message.bot).media_dir, parsed["sign"])
         if reward_path:
             caption = texts.review_reward_caption(parsed["sign"])
             await send_content(message.bot, message.chat.id, reward_path, caption)
+    try:
+        await state_machine.set_reviewed(db_path, message.from_user.id, pending["order_id"])
+        await state_machine.ensure_idle(db_path, message.from_user.id)
+    except InvalidStateTransition:
+        logger.warning("Review submit transition blocked user_id=%s order_id=%s", message.from_user.id, pending["order_id"])
     await message.answer(texts.review_thanks())

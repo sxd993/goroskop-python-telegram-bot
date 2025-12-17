@@ -11,7 +11,10 @@ from app.services.db import init_db
 
 
 async def main() -> None:
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
     settings = load_settings()
     await init_db(settings.db_path)
 
