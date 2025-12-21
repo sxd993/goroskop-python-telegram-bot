@@ -20,3 +20,9 @@ class AdminDelete(StatesGroup):
 class AdminReviewImage(StatesGroup):
     sign = State()
     file = State()
+
+
+class AdminBroadcastCreate(StatesGroup):
+    title = State()
+    body = State()
+    price = State()

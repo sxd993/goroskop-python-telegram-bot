@@ -10,7 +10,7 @@ from app.services import media
 REVIEW_CANCEL_CALLBACK = "review:cancel"
 REVIEW_MENU_CALLBACK = "review:menu"
 
-SIGN_EMOJI = {
+    SIGN_EMOJI = {
     "aries": "♈",
     "taurus": "♉",
     "gemini": "♊",
@@ -118,3 +118,20 @@ def build_review_cancel_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🏠 В меню", callback_data=REVIEW_MENU_CALLBACK)],
         ]
     )
+
+
+def build_campaign_interest_keyboard(campaign_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔥 Мне интересно", callback_data=f"campaign:interest:{campaign_id}")],
+            [InlineKeyboardButton(text="🙅‍♀️ Не интересно", callback_data=f"campaign:decline:{campaign_id}")],
+        ]
+    )
+
+
+def build_campaign_contact_keyboard(campaign_id: str) -> ReplyKeyboardMarkup:
+    buttons = [
+        [KeyboardButton(text="📱 Поделиться номером", request_contact=True)],
+        [KeyboardButton(text="❌ Отмена", )],
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True, one_time_keyboard=True)

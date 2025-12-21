@@ -388,3 +388,72 @@ def admin_review_image_saved(sign: str) -> str:
 def review_reward_caption(sign: str) -> str:
     sign_name = SIGNS_RU.get(sign, sign)
     return f"Твой бонус за отзыв. \nКартинка, которая работает как магнит для удачи и щит от негатива."
+
+
+# === Broadcasts ===
+
+
+def admin_broadcasts_menu() -> str:
+    return "Рассылки: выбери действие."
+
+
+def admin_broadcast_prompt_title() -> str:
+    return "Введи название рассылки."
+
+
+def admin_broadcast_prompt_body() -> str:
+    return "Введи текст рассылки (он уйдет пользователям как есть)."
+
+
+def admin_broadcast_prompt_price() -> str:
+    return "Введи стоимость услуги в рублях (например, 1500)."
+
+
+def admin_broadcast_created(title: str) -> str:
+    return f"Рассылка «{title}» создана как черновик."
+
+
+def admin_broadcasts_empty() -> str:
+    return "Нет рассылок в подходящем статусе."
+
+
+def admin_broadcast_launch_started(title: str, audience_size: int) -> str:
+    return f"Запускаю рассылку «{title}». Получателей: {audience_size}."
+
+
+def admin_broadcast_launch_finished(sent: int, failed: int, interested: int, declined: int) -> str:
+    return (
+        "Рассылка завершена.\n"
+        f"Отправлено: {sent}\n"
+        f"Ошибки: {failed}\n"
+        f"Интересно: {interested}\n"
+        f"Отказались: {declined}"
+    )
+
+
+def admin_broadcast_responses_title(title: str) -> str:
+    return f"Ответы по рассылке «{title}»:"
+
+
+def admin_broadcast_responses_empty() -> str:
+    return "Пока нет ответов."
+
+
+def campaign_offer(body: str, price_rub: float) -> str:
+    return f"{body}\n\nСтоимость: {price_rub:.0f} ₽"
+
+
+def campaign_interest_prompt() -> str:
+    return "Напиши ФИО, дату рождения и любую дополнительную информацию.\n\nИ обязательно отправь номер через кнопку ниже."
+
+
+def campaign_interest_saved() -> str:
+    return "Принял, теперь поделись номером через кнопку ниже."
+
+
+def campaign_contact_saved() -> str:
+    return "Спасибо! Заявку получили. Мы свяжемся по указанному номеру."
+
+
+def campaign_declined() -> str:
+    return "Ок, больше не будем беспокоить в этой рассылке."

@@ -3,6 +3,7 @@ from aiogram import Router
 from app.config import Settings
 
 from .dependencies import setup_admin_settings
+from .broadcasts import router as broadcasts_router
 from .forecasts import router as forecasts_router
 from .menu import router as menu_router
 from .reviews import router as reviews_router
@@ -15,6 +16,7 @@ router.include_router(forecasts_router)
 router.include_router(stats_router)
 router.include_router(reviews_router)
 router.include_router(review_images_router)
+router.include_router(broadcasts_router)
 
 
 def setup_handlers(settings: Settings) -> None:

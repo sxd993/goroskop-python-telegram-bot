@@ -7,12 +7,14 @@ from .menu import handle_buy_forecast, handle_start, handle_support, show_catalo
 from .navigation import router as navigation_router
 from .payments import router as payments_router
 from .reviews import handle_review_text, router as reviews_router
+from .campaigns import router as campaigns_router
 
 router = Router()
 router.include_router(menu_router)
 router.include_router(navigation_router)
 router.include_router(payments_router)
 router.include_router(reviews_router)
+router.include_router(campaigns_router)
 
 
 def setup_handlers(settings: Settings) -> None:

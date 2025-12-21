@@ -5,7 +5,7 @@ from typing import Optional
 
 import aiosqlite
 
-from app.models import Order, Payment, Review, User
+from app.models import Campaign, CampaignAudience, CampaignResponse, Order, Payment, Review, User
 
 
 CREATE_TABLE_SQL = """
@@ -63,6 +63,48 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 """
 
+CREATE_CAMPAIGNS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS campaigns (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    price_kopeks INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT
+);
+"""
+
+CREATE_CAMPAIGN_AUDIENCE_SQL = """
+CREATE TABLE IF NOT EXISTS campaign_audience (
+    campaign_id TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    message_id INTEGER,
+    error TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (campaign_id, user_id),
+    FOREIGN KEY(campaign_id) REFERENCES campaigns(id)
+);
+"""
+
+CREATE_CAMPAIGN_RESPONSES_SQL = """
+CREATE TABLE IF NOT EXISTS campaign_responses (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    full_name TEXT,
+    birthdate TEXT,
+    phone TEXT,
+    raw_text TEXT,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(campaign_id) REFERENCES campaigns(id)
+);
+"""
+
 
 def _now_iso() -> str:
     return dt.datetime.utcnow().isoformat()
@@ -75,6 +117,9 @@ async def init_db(db_path: Path) -> None:
         await db.execute(CREATE_USERS_TABLE_SQL)
         await db.execute(CREATE_PAYMENTS_TABLE_SQL)
         await db.execute(CREATE_REVIEWS_TABLE_SQL)
+        await db.execute(CREATE_CAMPAIGNS_TABLE_SQL)
+        await db.execute(CREATE_CAMPAIGN_AUDIENCE_SQL)
+        await db.execute(CREATE_CAMPAIGN_RESPONSES_SQL)
         await db.commit()
 
 
@@ -515,3 +560,240 @@ async def update_payment_status(db_path: Path, provider_tx_id: str, status: str)
             (status, now, provider_tx_id),
         )
         await db.commit()
+
+
+# === Campaigns ===
+
+
+async def create_campaign(db_path: Path, title: str, body: str, price_kopeks: int) -> Campaign:
+    campaign_id = str(uuid.uuid4())
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            INSERT INTO campaigns (id, title, body, price_kopeks, status, created_at)
+            VALUES (?, ?, ?, ?, 'draft', ?)
+            """,
+            (campaign_id, title, body, price_kopeks, now),
+        )
+        await db.commit()
+    return {
+        "id": campaign_id,
+        "title": title,
+        "body": body,
+        "price_kopeks": price_kopeks,
+        "status": "draft",
+        "created_at": now,
+        "started_at": None,
+        "finished_at": None,
+    }
+
+
+async def list_campaigns(db_path: Path, *, statuses: Optional[list[str]] = None) -> list[Campaign]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        base = "SELECT * FROM campaigns"
+        params: tuple = ()
+        if statuses:
+            placeholders = ",".join("?" for _ in statuses)
+            base += f" WHERE status IN ({placeholders})"
+            params = tuple(statuses)
+        base += " ORDER BY created_at DESC"
+        async with db.execute(base, params) as cursor:
+            rows = await cursor.fetchall()
+            return [Campaign(dict(row)) for row in rows]
+
+
+async def get_campaign(db_path: Path, campaign_id: str) -> Optional[Campaign]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)) as cursor:
+            row = await cursor.fetchone()
+            return Campaign(dict(row)) if row else None
+
+
+async def update_campaign_status(db_path: Path, campaign_id: str, status: str) -> None:
+    now = _now_iso()
+    started_at = now if status == "running" else None
+    finished_at = now if status in {"completed", "cancelled"} else None
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            UPDATE campaigns
+            SET status = ?,
+                started_at = COALESCE(started_at, ?),
+                finished_at = CASE WHEN ? IS NOT NULL THEN ? ELSE finished_at END
+            WHERE id = ?
+            """,
+            (status, started_at, finished_at, finished_at, campaign_id),
+        )
+        await db.commit()
+
+
+async def fetch_paid_user_ids(db_path: Path) -> list[int]:
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT DISTINCT user_id
+            FROM orders
+            WHERE status = 'paid'
+            """
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [int(row[0]) for row in rows]
+
+
+async def add_campaign_audience(db_path: Path, campaign_id: str, user_ids: list[int]) -> None:
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.executemany(
+            """
+            INSERT OR IGNORE INTO campaign_audience (campaign_id, user_id, status, updated_at)
+            VALUES (?, ?, 'pending', ?)
+            """,
+            [(campaign_id, user_id, now) for user_id in user_ids],
+        )
+        await db.commit()
+
+
+async def update_campaign_audience_status(
+    db_path: Path,
+    campaign_id: str,
+    user_id: int,
+    status: str,
+    *,
+    message_id: Optional[int] = None,
+    error: Optional[str] = None,
+) -> None:
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            UPDATE campaign_audience
+            SET status = ?,
+                message_id = COALESCE(?, message_id),
+                error = ?,
+                updated_at = ?
+            WHERE campaign_id = ? AND user_id = ?
+            """,
+            (status, message_id, error, now, campaign_id, user_id),
+        )
+        await db.commit()
+
+
+async def get_campaign_audience(
+    db_path: Path,
+    campaign_id: str,
+    *,
+    statuses: Optional[list[str]] = None,
+) -> list[CampaignAudience]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        base = "SELECT * FROM campaign_audience WHERE campaign_id = ?"
+        params: list = [campaign_id]
+        if statuses:
+            placeholders = ",".join("?" for _ in statuses)
+            base += f" AND status IN ({placeholders})"
+            params.extend(statuses)
+        base += " ORDER BY updated_at DESC"
+        async with db.execute(base, tuple(params)) as cursor:
+            rows = await cursor.fetchall()
+            return [CampaignAudience(dict(row)) for row in rows]
+
+
+async def create_or_update_campaign_response(
+    db_path: Path,
+    campaign_id: str,
+    user_id: int,
+    *,
+    full_name: Optional[str] = None,
+    birthdate: Optional[str] = None,
+    phone: Optional[str] = None,
+    raw_text: Optional[str] = None,
+    status: Optional[str] = None,
+) -> CampaignResponse:
+    now = _now_iso()
+    response_id = str(uuid.uuid4())
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            INSERT OR IGNORE INTO campaign_responses (
+                id, campaign_id, user_id, full_name, birthdate, phone, raw_text, status, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'collecting', ?, ?)
+            """,
+            (response_id, campaign_id, user_id, full_name, birthdate, phone, raw_text, now, now),
+        )
+        await db.execute(
+            """
+            UPDATE campaign_responses
+            SET full_name = COALESCE(?, full_name),
+                birthdate = COALESCE(?, birthdate),
+                phone = COALESCE(?, phone),
+                raw_text = COALESCE(?, raw_text),
+                status = COALESCE(?, status),
+                updated_at = ?
+            WHERE campaign_id = ? AND user_id = ?
+            """,
+            (full_name, birthdate, phone, raw_text, status, now, campaign_id, user_id),
+        )
+        await db.commit()
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM campaign_responses WHERE campaign_id = ? AND user_id = ?",
+            (campaign_id, user_id),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return CampaignResponse(dict(row)) if row else {
+                "id": response_id,
+                "campaign_id": campaign_id,
+                "user_id": user_id,
+                "full_name": full_name,
+                "birthdate": birthdate,
+                "phone": phone,
+                "raw_text": raw_text,
+                "status": status or "collecting",
+                "created_at": now,
+                "updated_at": now,
+            }
+
+
+async def get_pending_campaign_response_for_user(
+    db_path: Path,
+    user_id: int,
+) -> Optional[CampaignResponse]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT r.*
+            FROM campaign_responses AS r
+            JOIN campaign_audience AS a
+                ON a.campaign_id = r.campaign_id AND a.user_id = r.user_id
+            WHERE r.user_id = ? AND r.status IN ('collecting', 'waiting_contact')
+            ORDER BY r.updated_at DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return CampaignResponse(dict(row)) if row else None
+
+
+async def list_campaign_responses(
+    db_path: Path,
+    campaign_id: str,
+) -> list[CampaignResponse]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT *
+            FROM campaign_responses
+            WHERE campaign_id = ?
+            ORDER BY updated_at DESC
+            """,
+            (campaign_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [CampaignResponse(dict(row)) for row in rows]

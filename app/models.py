@@ -43,3 +43,36 @@ class Payment(TypedDict):
     payload: str
     created_at: str
     updated_at: str
+
+
+class Campaign(TypedDict):
+    id: str
+    title: str
+    body: str
+    price_kopeks: int
+    status: str
+    created_at: str
+    started_at: Optional[str]
+    finished_at: Optional[str]
+
+
+class CampaignAudience(TypedDict):
+    campaign_id: str
+    user_id: int
+    status: str
+    message_id: Optional[int]
+    error: Optional[str]
+    updated_at: str
+
+
+class CampaignResponse(TypedDict):
+    id: str
+    campaign_id: str
+    user_id: int
+    full_name: Optional[str]
+    birthdate: Optional[str]
+    phone: Optional[str]
+    raw_text: Optional[str]
+    status: str
+    created_at: str
+    updated_at: str

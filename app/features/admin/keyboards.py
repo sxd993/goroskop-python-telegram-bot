@@ -25,6 +25,10 @@ ADMIN_DELETE_FORECAST_CALLBACK = "admin:delete_forecast"
 ADMIN_STATS_CALLBACK = "admin:stats"
 ADMIN_REVIEWS_CALLBACK = "admin:reviews"
 ADMIN_REVIEW_IMAGE_CALLBACK = "admin:review_image"
+ADMIN_BROADCASTS_CALLBACK = "admin:broadcasts"
+ADMIN_BROADCAST_CREATE_CALLBACK = "admin:broadcasts:create"
+ADMIN_BROADCAST_LAUNCH_PREFIX = "admin:broadcasts:launch"
+ADMIN_BROADCAST_RESPONSES_PREFIX = "admin:broadcasts:responses"
 ADMIN_BACK_MENU_CALLBACK = "admin-back:menu"
 ADMIN_REVIEWS_PAGE_PREFIX = "admin-reviews:page"
 ADMIN_REVIEW_OPEN_PREFIX = "admin-review:open"
@@ -39,6 +43,7 @@ def build_admin_menu() -> InlineKeyboardMarkup:
     builder.button(text="📊 Статистика продаж", callback_data=ADMIN_STATS_CALLBACK)
     builder.button(text="💬 Отзывы", callback_data=ADMIN_REVIEWS_CALLBACK)
     builder.button(text="🖼️ Картинки после отзывов", callback_data=ADMIN_REVIEW_IMAGE_CALLBACK)
+    builder.button(text="📢 Рассылки", callback_data=ADMIN_BROADCASTS_CALLBACK)
     builder.adjust(1)
     return builder.as_markup()
 
@@ -198,3 +203,24 @@ def build_admin_stats_month_detail_keyboard(*, page: int) -> InlineKeyboardMarku
             [InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)],
         ]
     )
+
+
+def build_broadcasts_menu_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🆕 Создать рассылку", callback_data=ADMIN_BROADCAST_CREATE_CALLBACK)
+    builder.button(text="🚀 Запустить", callback_data=f"{ADMIN_BROADCAST_LAUNCH_PREFIX}:list")
+    builder.button(text="📋 Ответы", callback_data=f"{ADMIN_BROADCAST_RESPONSES_PREFIX}:list")
+    builder.button(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def build_broadcasts_list_keyboard(items: list[tuple[str, str]], prefix: str, *, include_back: bool = True) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for text, campaign_id in items:
+        builder.button(text=text, callback_data=f"{prefix}:{campaign_id}")
+    builder.adjust(1)
+    if include_back:
+        builder.button(text="⬅️ Назад", callback_data=ADMIN_BROADCASTS_CALLBACK)
+        builder.adjust(1)
+    return builder.as_markup()
