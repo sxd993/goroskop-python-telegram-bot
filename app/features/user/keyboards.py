@@ -9,7 +9,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.config import SIGNS_RU
-from app.features.menu_labels import (
+from app.menu_labels import (
     ADMIN_PANEL_LABEL,
     BUY_FORECAST_LABEL,
     SUPPORT_LABEL,

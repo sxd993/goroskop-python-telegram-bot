@@ -26,9 +26,13 @@ ADMIN_STATS_CALLBACK = "admin:stats"
 ADMIN_REVIEWS_CALLBACK = "admin:reviews"
 ADMIN_REVIEW_IMAGE_CALLBACK = "admin:review_image"
 ADMIN_BROADCASTS_CALLBACK = "admin:broadcasts"
+ADMIN_BROADCAST_LIST_CALLBACK = "admin:broadcasts:list"
+ADMIN_BROADCAST_ITEM_PREFIX = "admin:broadcasts:item"
+ADMIN_BROADCAST_DELETE_PREFIX = "admin:broadcasts:delete"
 ADMIN_BROADCAST_CREATE_CALLBACK = "admin:broadcasts:create"
 ADMIN_BROADCAST_LAUNCH_PREFIX = "admin:broadcasts:launch"
-ADMIN_BROADCAST_RESPONSES_PREFIX = "admin:broadcasts:responses"
+ADMIN_BROADCAST_RESPONSES_PREFIX = "admin:br:list"
+ADMIN_BROADCAST_RESPONSES_ITEM_PREFIX = "admin:br:item"
 ADMIN_BACK_MENU_CALLBACK = "admin-back:menu"
 ADMIN_REVIEWS_PAGE_PREFIX = "admin-reviews:page"
 ADMIN_REVIEW_OPEN_PREFIX = "admin-review:open"
@@ -208,8 +212,7 @@ def build_admin_stats_month_detail_keyboard(*, page: int) -> InlineKeyboardMarku
 def build_broadcasts_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="🆕 Создать рассылку", callback_data=ADMIN_BROADCAST_CREATE_CALLBACK)
-    builder.button(text="🚀 Запустить", callback_data=f"{ADMIN_BROADCAST_LAUNCH_PREFIX}:list")
-    builder.button(text="📋 Ответы", callback_data=f"{ADMIN_BROADCAST_RESPONSES_PREFIX}:list")
+    builder.button(text="📚 Список рассылок", callback_data=ADMIN_BROADCAST_LIST_CALLBACK)
     builder.button(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)
     builder.adjust(1)
     return builder.as_markup()
@@ -223,4 +226,88 @@ def build_broadcasts_list_keyboard(items: list[tuple[str, str]], prefix: str, *,
     if include_back:
         builder.button(text="⬅️ Назад", callback_data=ADMIN_BROADCASTS_CALLBACK)
         builder.adjust(1)
+    return builder.as_markup()
+
+
+def build_broadcast_responses_list_keyboard(
+    campaign_id: str,
+    campaign_token: str,
+    responses: list[dict],
+    *,
+    page: int,
+    has_next: bool,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for resp in responses:
+        label = resp.get("full_name")
+        if not label:
+            label = f"User {resp['user_id']}"
+        resp_token = resp.get("_token", resp["id"])
+        builder.button(
+            text=label,
+            callback_data=f"{ADMIN_BROADCAST_RESPONSES_ITEM_PREFIX}:{campaign_token}:{page}:{resp_token}",
+        )
+    builder.adjust(1)
+
+    nav: list[InlineKeyboardButton] = []
+    if page > 1:
+        nav.append(
+            InlineKeyboardButton(
+                text="⬅️ Назад",
+                callback_data=f"{ADMIN_BROADCAST_RESPONSES_PREFIX}:{campaign_token}:{page - 1}",
+            )
+        )
+    if has_next:
+        nav.append(
+            InlineKeyboardButton(
+                text="➡️ Далее",
+                callback_data=f"{ADMIN_BROADCAST_RESPONSES_PREFIX}:{campaign_token}:{page + 1}",
+            )
+        )
+    if nav:
+        builder.row(*nav)
+
+    builder.row(
+        InlineKeyboardButton(
+            text="⬅️ К рассылке",
+            callback_data=f"{ADMIN_BROADCAST_ITEM_PREFIX}:{campaign_id}",
+        ),
+        InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK),
+    )
+    return builder.as_markup()
+
+
+def build_broadcast_response_detail_keyboard(
+    *,
+    campaign_id: str,
+    campaign_token: str,
+    page: int,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⬅️ К списку",
+                    callback_data=f"{ADMIN_BROADCAST_RESPONSES_PREFIX}:{campaign_token}:{page}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⬅️ К рассылке",
+                    callback_data=f"{ADMIN_BROADCAST_ITEM_PREFIX}:{campaign_id}",
+                )
+            ],
+            [InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)],
+        ]
+    )
+
+
+def build_broadcast_item_menu_keyboard(campaign_id: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🚀 Запустить", callback_data=f"{ADMIN_BROADCAST_LAUNCH_PREFIX}:{campaign_id}")
+    builder.button(text="📋 Ответы", callback_data=f"{ADMIN_BROADCAST_RESPONSES_PREFIX}:{campaign_id}")
+    builder.button(text="🗑️ Удалить рассылку", callback_data=f"{ADMIN_BROADCAST_DELETE_PREFIX}:{campaign_id}")
+    builder.button(text="⬅️ К списку", callback_data=ADMIN_BROADCAST_LIST_CALLBACK)
+    builder.button(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)
+    builder.adjust(1)
     return builder.as_markup()

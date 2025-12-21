@@ -3,6 +3,7 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.config import load_settings
 from app.features.admin.handlers import router as admin_router, setup_handlers as setup_admin_handlers
@@ -22,7 +23,8 @@ async def main() -> None:
     setup_handlers(settings)
     setup_admin_handlers(settings)
 
-    dp = Dispatcher()
+    storage = MemoryStorage()
+    dp = Dispatcher(storage=storage)
     dp.include_router(admin_router)
     dp.include_router(navigation_router)
 

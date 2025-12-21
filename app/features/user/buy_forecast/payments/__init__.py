@@ -5,11 +5,11 @@ from aiogram import Bot, F, Router
 from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
 
 from app.config import PRICE_KOPEKS_BY_KIND
-from app.features import texts
+from app import texts
 from app.config import SIGNS_RU
 from app.features.user.dependencies import ensure_user, get_db_path, get_settings
 from app.features.user.keyboards import build_review_cancel_keyboard
-from app.features.user.reviews import prompt_review
+from ..reviews import prompt_review
 from app.services import db, media, payments, state_machine
 from app.services.messaging import send_content, send_message_safe
 from app.services.payments import PaymentStatus

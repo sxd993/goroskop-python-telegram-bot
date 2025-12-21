@@ -3,7 +3,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
 from app.config import MONTH_NAMES_RU, SIGNS_RU
-from app.features import texts
+from app import texts
 from app.features.admin.dependencies import get_settings, is_admin
 from app.features.admin.keyboards import (
     ADMIN_STATS_CALLBACK,

@@ -25,3 +25,8 @@ def get_db_path(bot: Bot) -> Path:
 
 async def ensure_user(bot: Bot, user_id: int) -> None:
     await state_machine.get_user_state(get_db_path(bot), user_id)
+
+
+def is_admin(bot: Bot, user_id: int | None) -> bool:
+    settings = get_settings(bot)
+    return bool(user_id and user_id in settings.admin_ids)

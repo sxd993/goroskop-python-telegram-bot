@@ -3,7 +3,7 @@ import logging
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
 
-from app.features import texts
+from app import texts
 from app.features.user.dependencies import get_db_path, get_settings
 from app.features.user.keyboards import (
     REVIEW_CANCEL_CALLBACK,
@@ -92,7 +92,7 @@ async def handle_review_cancel(callback: CallbackQuery):
     db_path = get_db_path(callback.bot)
     await state_machine.ensure_idle(db_path, callback.from_user.id)
     await callback.message.answer(texts.review_cancelled())
-    from app.features.user.menu import show_catalog_menu
+    from ..menu import show_catalog_menu
 
     await show_catalog_menu(callback.message)
 

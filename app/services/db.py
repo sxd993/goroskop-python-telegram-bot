@@ -68,11 +68,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     body TEXT NOT NULL,
-    price_kopeks INTEGER NOT NULL,
-    status TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    started_at TEXT,
-    finished_at TEXT
+    price_kopeks INTEGER NOT NULL
 );
 """
 
@@ -110,6 +106,30 @@ def _now_iso() -> str:
     return dt.datetime.utcnow().isoformat()
 
 
+async def _ensure_campaigns_table(db: aiosqlite.Connection) -> None:
+    cursor = await db.execute("PRAGMA table_info(campaigns)")
+    rows = await cursor.fetchall()
+    columns = [row[1] for row in rows]
+    expected = {"id", "title", "body", "price_kopeks"}
+    if not columns:
+        await db.execute(CREATE_CAMPAIGNS_TABLE_SQL)
+        return
+    if set(columns) == expected:
+        return
+
+    legacy_name = f"campaigns_legacy_{int(dt.datetime.utcnow().timestamp())}"
+    await db.execute(f"ALTER TABLE campaigns RENAME TO {legacy_name}")
+    await db.execute(CREATE_CAMPAIGNS_TABLE_SQL)
+    await db.execute(
+        f"""
+        INSERT INTO campaigns (id, title, body, price_kopeks)
+        SELECT id, title, body, price_kopeks FROM {legacy_name}
+        """
+    )
+    await db.execute(f"DROP TABLE {legacy_name}")
+    await db.commit()
+
+
 async def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(db_path) as db:
@@ -117,7 +137,7 @@ async def init_db(db_path: Path) -> None:
         await db.execute(CREATE_USERS_TABLE_SQL)
         await db.execute(CREATE_PAYMENTS_TABLE_SQL)
         await db.execute(CREATE_REVIEWS_TABLE_SQL)
-        await db.execute(CREATE_CAMPAIGNS_TABLE_SQL)
+        await _ensure_campaigns_table(db)
         await db.execute(CREATE_CAMPAIGN_AUDIENCE_SQL)
         await db.execute(CREATE_CAMPAIGN_RESPONSES_SQL)
         await db.commit()
@@ -567,14 +587,13 @@ async def update_payment_status(db_path: Path, provider_tx_id: str, status: str)
 
 async def create_campaign(db_path: Path, title: str, body: str, price_kopeks: int) -> Campaign:
     campaign_id = str(uuid.uuid4())
-    now = _now_iso()
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
             """
-            INSERT INTO campaigns (id, title, body, price_kopeks, status, created_at)
-            VALUES (?, ?, ?, ?, 'draft', ?)
+            INSERT INTO campaigns (id, title, body, price_kopeks)
+            VALUES (?, ?, ?, ?)
             """,
-            (campaign_id, title, body, price_kopeks, now),
+            (campaign_id, title, body, price_kopeks),
         )
         await db.commit()
     return {
@@ -582,26 +601,31 @@ async def create_campaign(db_path: Path, title: str, body: str, price_kopeks: in
         "title": title,
         "body": body,
         "price_kopeks": price_kopeks,
-        "status": "draft",
-        "created_at": now,
-        "started_at": None,
-        "finished_at": None,
     }
 
 
-async def list_campaigns(db_path: Path, *, statuses: Optional[list[str]] = None) -> list[Campaign]:
+async def list_campaigns(db_path: Path) -> list[Campaign]:
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         base = "SELECT * FROM campaigns"
-        params: tuple = ()
-        if statuses:
-            placeholders = ",".join("?" for _ in statuses)
-            base += f" WHERE status IN ({placeholders})"
-            params = tuple(statuses)
-        base += " ORDER BY created_at DESC"
-        async with db.execute(base, params) as cursor:
+        base += " ORDER BY rowid DESC"
+        async with db.execute(base) as cursor:
             rows = await cursor.fetchall()
             return [Campaign(dict(row)) for row in rows]
+
+
+async def delete_campaign(db_path: Path, campaign_id: str) -> None:
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "DELETE FROM campaign_responses WHERE campaign_id = ?",
+            (campaign_id,),
+        )
+        await db.execute(
+            "DELETE FROM campaign_audience WHERE campaign_id = ?",
+            (campaign_id,),
+        )
+        await db.execute("DELETE FROM campaigns WHERE id = ?", (campaign_id,))
+        await db.commit()
 
 
 async def get_campaign(db_path: Path, campaign_id: str) -> Optional[Campaign]:
@@ -610,24 +634,6 @@ async def get_campaign(db_path: Path, campaign_id: str) -> Optional[Campaign]:
         async with db.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)) as cursor:
             row = await cursor.fetchone()
             return Campaign(dict(row)) if row else None
-
-
-async def update_campaign_status(db_path: Path, campaign_id: str, status: str) -> None:
-    now = _now_iso()
-    started_at = now if status == "running" else None
-    finished_at = now if status in {"completed", "cancelled"} else None
-    async with aiosqlite.connect(db_path) as db:
-        await db.execute(
-            """
-            UPDATE campaigns
-            SET status = ?,
-                started_at = COALESCE(started_at, ?),
-                finished_at = CASE WHEN ? IS NOT NULL THEN ? ELSE finished_at END
-            WHERE id = ?
-            """,
-            (status, started_at, finished_at, finished_at, campaign_id),
-        )
-        await db.commit()
 
 
 async def fetch_paid_user_ids(db_path: Path) -> list[int]:
@@ -701,6 +707,16 @@ async def get_campaign_audience(
             return [CampaignAudience(dict(row)) for row in rows]
 
 
+async def campaign_has_audience(db_path: Path, campaign_id: str) -> bool:
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            "SELECT 1 FROM campaign_audience WHERE campaign_id = ? LIMIT 1",
+            (campaign_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row is not None
+
+
 async def create_or_update_campaign_response(
     db_path: Path,
     campaign_id: str,
@@ -713,35 +729,56 @@ async def create_or_update_campaign_response(
     status: Optional[str] = None,
 ) -> CampaignResponse:
     now = _now_iso()
-    response_id = str(uuid.uuid4())
     async with aiosqlite.connect(db_path) as db:
-        await db.execute(
-            """
-            INSERT OR IGNORE INTO campaign_responses (
-                id, campaign_id, user_id, full_name, birthdate, phone, raw_text, status, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'collecting', ?, ?)
-            """,
-            (response_id, campaign_id, user_id, full_name, birthdate, phone, raw_text, now, now),
-        )
-        await db.execute(
-            """
-            UPDATE campaign_responses
-            SET full_name = COALESCE(?, full_name),
-                birthdate = COALESCE(?, birthdate),
-                phone = COALESCE(?, phone),
-                raw_text = COALESCE(?, raw_text),
-                status = COALESCE(?, status),
-                updated_at = ?
-            WHERE campaign_id = ? AND user_id = ?
-            """,
-            (full_name, birthdate, phone, raw_text, status, now, campaign_id, user_id),
-        )
-        await db.commit()
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM campaign_responses WHERE campaign_id = ? AND user_id = ?",
             (campaign_id, user_id),
+        ) as cursor:
+            existing = await cursor.fetchone()
+
+        if existing:
+            response_id = existing["id"]
+            await db.execute(
+                """
+                UPDATE campaign_responses
+                SET full_name = COALESCE(?, full_name),
+                    birthdate = COALESCE(?, birthdate),
+                    phone = COALESCE(?, phone),
+                    raw_text = COALESCE(?, raw_text),
+                    status = COALESCE(?, status),
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (full_name, birthdate, phone, raw_text, status, now, response_id),
+            )
+        else:
+            response_id = str(uuid.uuid4())
+            await db.execute(
+                """
+                INSERT INTO campaign_responses (
+                    id, campaign_id, user_id, full_name, birthdate, phone, raw_text, status, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    response_id,
+                    campaign_id,
+                    user_id,
+                    full_name,
+                    birthdate,
+                    phone,
+                    raw_text,
+                    status or "collecting",
+                    now,
+                    now,
+                ),
+            )
+
+        await db.commit()
+        async with db.execute(
+            "SELECT * FROM campaign_responses WHERE id = ?",
+            (response_id,),
         ) as cursor:
             row = await cursor.fetchone()
             return CampaignResponse(dict(row)) if row else {
@@ -796,4 +833,12 @@ async def list_campaign_responses(
             (campaign_id,),
         ) as cursor:
             rows = await cursor.fetchall()
-            return [CampaignResponse(dict(row)) for row in rows]
+            seen: set[int] = set()
+            responses: list[CampaignResponse] = []
+            for row in rows:
+                resp = CampaignResponse(dict(row))
+                if resp["user_id"] in seen:
+                    continue
+                seen.add(resp["user_id"])
+                responses.append(resp)
+            return responses

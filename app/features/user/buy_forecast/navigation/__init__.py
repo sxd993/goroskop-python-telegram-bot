@@ -4,7 +4,7 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
 
 from app.config import PRICE_KOPEKS_BY_KIND
-from app.features import texts
+from app import texts
 from app.features.user.dependencies import get_settings
 from app.features.user.keyboards import (
     build_layout_keyboard,

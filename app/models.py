@@ -50,10 +50,6 @@ class Campaign(TypedDict):
     title: str
     body: str
     price_kopeks: int
-    status: str
-    created_at: str
-    started_at: Optional[str]
-    finished_at: Optional[str]
 
 
 class CampaignAudience(TypedDict):

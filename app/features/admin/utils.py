@@ -5,7 +5,7 @@ from typing import Optional
 
 from aiogram.types import CallbackQuery, Message
 
-from app.features import texts
+from app import texts
 from app.config import SIGNS_RU
 from app.services import media
 from app.services.parsing import parse_product

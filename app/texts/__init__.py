@@ -397,6 +397,22 @@ def admin_broadcasts_menu() -> str:
     return "Рассылки: выбери действие."
 
 
+def admin_broadcasts_list_title() -> str:
+    return "Список рассылок: выбери рассылку для управления."
+
+
+def admin_broadcast_item_detail(title: str, price_rub: float) -> str:
+    return (
+        f"Рассылка «{title}»\n"
+        f"Цена: {price_rub:.0f} ₽\n\n"
+        "Выбери действие:"
+    )
+
+
+def admin_broadcast_deleted(title: str) -> str:
+    return f"Рассылка «{title}» удалена."
+
+
 def admin_broadcast_prompt_title() -> str:
     return "Введи название рассылки."
 
@@ -414,11 +430,36 @@ def admin_broadcast_created(title: str) -> str:
 
 
 def admin_broadcasts_empty() -> str:
-    return "Нет рассылок в подходящем статусе."
+    return "Список рассылок пока пуст."
+
+
+def admin_broadcast_responses_list_title(
+    title: str,
+    page: int,
+    total_pages: int,
+) -> str:
+    return (
+        f"Ответы по рассылке «{title}» (страница {page}/{total_pages}). "
+        "Выбери пользователя:"
+    )
+
+
+def admin_broadcast_response_detail(title: str, response: dict) -> str:
+    return (
+        f"Рассылка «{title}»\n"
+        f"User: {response['user_id']}\n"
+        f"ФИО: {response.get('full_name') or '-'}\n"
+        f"Дата: {response.get('birthdate') or '-'}\n"
+        f"Телефон: {response.get('phone') or '-'}\n"
+    )
 
 
 def admin_broadcast_launch_started(title: str, audience_size: int) -> str:
     return f"Запускаю рассылку «{title}». Получателей: {audience_size}."
+
+
+def admin_broadcast_launch_ack() -> str:
+    return "Рассылка была запущена."
 
 
 def admin_broadcast_launch_finished(sent: int, failed: int, interested: int, declined: int) -> str:
@@ -431,10 +472,6 @@ def admin_broadcast_launch_finished(sent: int, failed: int, interested: int, dec
     )
 
 
-def admin_broadcast_responses_title(title: str) -> str:
-    return f"Ответы по рассылке «{title}»:"
-
-
 def admin_broadcast_responses_empty() -> str:
     return "Пока нет ответов."
 
@@ -443,8 +480,16 @@ def campaign_offer(body: str, price_rub: float) -> str:
     return f"{body}\n\nСтоимость: {price_rub:.0f} ₽"
 
 
-def campaign_interest_prompt() -> str:
-    return "Напиши ФИО, дату рождения и любую дополнительную информацию.\n\nИ обязательно отправь номер через кнопку ниже."
+def campaign_prompt_full_name() -> str:
+    return "Напиши, пожалуйста, ФИО для заявки."
+
+
+def campaign_prompt_birthdate() -> str:
+    return "Теперь укажи дату рождения (например, 25.11.1990)."
+
+
+def campaign_birthdate_invalid() -> str:
+    return "Пожалуйста, введи дату в формате дд.мм.гггг, например 25.11.1990."
 
 
 def campaign_interest_saved() -> str:

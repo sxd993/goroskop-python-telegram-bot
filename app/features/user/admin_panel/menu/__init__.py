@@ -3,8 +3,8 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from app.features import texts
-from app.features.menu_labels import ADMIN_PANEL_LABEL
+from app import texts
+from app.menu_labels import ADMIN_PANEL_LABEL
 from app.features.admin.dependencies import is_admin
 from app.features.admin.keyboards import ADMIN_BACK_MENU_CALLBACK, build_admin_menu
 

@@ -2,7 +2,7 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
-from app.features import texts
+from app import texts
 from app.features.admin.dependencies import get_settings, is_admin
 from app.features.admin.keyboards import (
     ADMIN_REVIEWS_CALLBACK,
