@@ -717,6 +717,21 @@ async def campaign_has_audience(db_path: Path, campaign_id: str) -> bool:
             return row is not None
 
 
+async def fetch_campaign_audience_stats(db_path: Path, campaign_id: str) -> dict[str, int]:
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT status, COUNT(*) AS cnt
+            FROM campaign_audience
+            WHERE campaign_id = ?
+            GROUP BY status
+            """,
+            (campaign_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return {row[0]: int(row[1]) for row in rows}
+
+
 async def create_or_update_campaign_response(
     db_path: Path,
     campaign_id: str,

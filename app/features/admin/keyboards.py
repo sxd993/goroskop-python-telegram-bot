@@ -31,6 +31,7 @@ ADMIN_BROADCAST_ITEM_PREFIX = "admin:broadcasts:item"
 ADMIN_BROADCAST_DELETE_PREFIX = "admin:broadcasts:delete"
 ADMIN_BROADCAST_CREATE_CALLBACK = "admin:broadcasts:create"
 ADMIN_BROADCAST_LAUNCH_PREFIX = "admin:broadcasts:launch"
+ADMIN_BROADCAST_STATS_PREFIX = "admin:broadcasts:stats"
 ADMIN_BROADCAST_RESPONSES_PREFIX = "admin:br:list"
 ADMIN_BROADCAST_RESPONSES_ITEM_PREFIX = "admin:br:item"
 ADMIN_BACK_MENU_CALLBACK = "admin-back:menu"
@@ -302,10 +303,24 @@ def build_broadcast_response_detail_keyboard(
     )
 
 
+def build_broadcast_stats_keyboard(campaign_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⬅️ К рассылке",
+                    callback_data=f"{ADMIN_BROADCAST_ITEM_PREFIX}:{campaign_id}",
+                )
+            ],
+            [InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)],
+        ]
+    )
+
+
 def build_broadcast_item_menu_keyboard(campaign_id: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="🚀 Запустить", callback_data=f"{ADMIN_BROADCAST_LAUNCH_PREFIX}:{campaign_id}")
-    builder.button(text="📋 Ответы", callback_data=f"{ADMIN_BROADCAST_RESPONSES_PREFIX}:{campaign_id}")
+    builder.button(text="📈 Статистика", callback_data=f"{ADMIN_BROADCAST_STATS_PREFIX}:{campaign_id}")
     builder.button(text="🗑️ Удалить рассылку", callback_data=f"{ADMIN_BROADCAST_DELETE_PREFIX}:{campaign_id}")
     builder.button(text="⬅️ К списку", callback_data=ADMIN_BROADCAST_LIST_CALLBACK)
     builder.button(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)

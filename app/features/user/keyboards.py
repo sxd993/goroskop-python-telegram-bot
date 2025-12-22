@@ -176,15 +176,3 @@ def build_campaign_interest_keyboard(campaign_id: str) -> InlineKeyboardMarkup:
     )
 
 
-def build_campaign_contact_keyboard(campaign_id: str) -> ReplyKeyboardMarkup:
-    buttons = [
-        [KeyboardButton(text="📱 Поделиться номером", request_contact=True)],
-        [
-            KeyboardButton(
-                text="❌ Отмена",
-            )
-        ],
-    ]
-    return ReplyKeyboardMarkup(
-        keyboard=buttons, resize_keyboard=True, one_time_keyboard=True
-    )

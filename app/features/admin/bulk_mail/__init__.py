@@ -15,11 +15,13 @@ from app.features.admin.keyboards import (
     ADMIN_BROADCAST_ITEM_PREFIX,
     ADMIN_BROADCAST_LIST_CALLBACK,
     ADMIN_BROADCAST_LAUNCH_PREFIX,
+    ADMIN_BROADCAST_STATS_PREFIX,
     ADMIN_BROADCAST_RESPONSES_PREFIX,
     ADMIN_BROADCAST_RESPONSES_ITEM_PREFIX,
     build_broadcast_item_menu_keyboard,
     build_broadcast_responses_list_keyboard,
     build_broadcast_response_detail_keyboard,
+    build_broadcast_stats_keyboard,
     build_broadcasts_list_keyboard,
     build_broadcasts_menu_keyboard,
 )
@@ -192,6 +194,38 @@ async def handle_broadcast_item_select(callback: CallbackQuery, state: FSMContex
     )
 
 
+@router.callback_query(F.data.startswith(f"{ADMIN_BROADCAST_STATS_PREFIX}:"))
+async def handle_broadcast_stats(callback: CallbackQuery, state: FSMContext):
+    if not _ensure_admin(callback):
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+
+    await state.clear()
+    campaign_id = (callback.data or "").split(":", maxsplit=3)[-1]
+    db_path = get_settings(callback.bot).db_path
+
+    campaign = await db.get_campaign(db_path, campaign_id)
+    if not campaign:
+        await callback.answer("Рассылка не найдена", show_alert=True)
+        return
+
+    stats = await db.fetch_campaign_audience_stats(db_path, campaign_id)
+    delivered = sum(stats.get(key, 0) for key in ("sent", "interested", "declined"))
+    interested = stats.get("interested", 0)
+    declined = stats.get("declined", 0)
+
+    await callback.answer()
+    await callback.message.answer(
+        texts.admin_broadcast_stats_summary(
+            campaign["title"],
+            delivered,
+            interested,
+            declined,
+        ),
+        reply_markup=build_broadcast_stats_keyboard(campaign_id),
+    )
+
+
 @router.callback_query(F.data.startswith(f"{ADMIN_BROADCAST_DELETE_PREFIX}:"))
 async def handle_broadcast_delete(callback: CallbackQuery, state: FSMContext):
     if not _ensure_admin(callback):
@@ -311,10 +345,6 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Рассылка не найдена", show_alert=True)
         return
 
-    if await db.campaign_has_audience(db_path, campaign_id):
-        await callback.answer("Рассылка уже запущена", show_alert=True)
-        return
-
     audience = await db.fetch_paid_user_ids(db_path)
     if not audience:
         await callback.answer()
@@ -325,6 +355,8 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
         return
 
     await db.add_campaign_audience(db_path, campaign_id, audience)
+    audience_status_rows = await db.get_campaign_audience(db_path, campaign_id)
+    status_map: dict[int, str] = {row["user_id"]: row["status"] for row in audience_status_rows}
 
     await callback.answer()
     await callback.message.answer(texts.admin_broadcast_launch_ack())
@@ -334,6 +366,8 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
         interested = declined = 0
 
         for user_id in audience:
+            if status_map.get(user_id) in {"interested", "declined"}:
+                continue
             try:
                 text = texts.campaign_offer(
                     campaign["body"],
@@ -358,6 +392,7 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
                         "sent",
                         message_id=message_id,
                     )
+                    status_map[user_id] = "sent"
                 else:
                     failed += 1
                     await db.update_campaign_audience_status(
@@ -367,6 +402,7 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
                         "failed",
                         error="Delivery failed",
                     )
+                    status_map[user_id] = "failed"
 
             except Exception as exc:
                 logger.exception(
@@ -382,6 +418,7 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
                     "failed",
                     error=str(exc),
                 )
+                status_map[user_id] = "failed"
 
             await asyncio.sleep(0.05)
 
