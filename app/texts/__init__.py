@@ -401,10 +401,9 @@ def admin_broadcasts_list_title() -> str:
     return "Список рассылок: выбери рассылку для управления."
 
 
-def admin_broadcast_item_detail(title: str, price_rub: float) -> str:
+def admin_broadcast_item_detail(title: str) -> str:
     return (
-        f"Рассылка «{title}»\n"
-        f"Цена: {price_rub:.0f} ₽\n\n"
+        f"Рассылка «{title}»\n\n"
         "Выбери действие:"
     )
 
@@ -421,8 +420,10 @@ def admin_broadcast_prompt_body() -> str:
     return "Введи текст рассылки (он уйдет пользователям как есть)."
 
 
-def admin_broadcast_prompt_price() -> str:
-    return "Введи стоимость услуги в рублях (например, 1500)."
+def admin_broadcast_prompt_interest_redirect() -> str:
+    return (
+        "Опиши, что будет после нажатия «🔥 Мне интересно»: "
+    )
 
 
 def admin_broadcast_created(title: str) -> str:
@@ -462,6 +463,10 @@ def admin_broadcast_launch_ack() -> str:
     return "Рассылка была запущена."
 
 
+def admin_broadcast_launch_repeat_ack() -> str:
+    return "Эта рассылка уже запускалась, запускаю повторно."
+
+
 def admin_broadcast_launch_finished(sent: int, failed: int, interested: int, declined: int) -> str:
     return (
         "Рассылка завершена.\n"
@@ -490,8 +495,8 @@ def admin_broadcast_stats_summary(
     )
 
 
-def campaign_offer(body: str, price_rub: float) -> str:
-    return f"{body}\n\nСтоимость: {price_rub:.0f} ₽"
+def campaign_offer(body: str) -> str:
+    return body
 
 
 def campaign_declined() -> str:

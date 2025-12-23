@@ -50,6 +50,7 @@ class Campaign(TypedDict):
     title: str
     body: str
     price_kopeks: int
+    interest_redirect: str
 
 
 class CampaignAudience(TypedDict):

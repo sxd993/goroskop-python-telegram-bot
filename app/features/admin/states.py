@@ -25,4 +25,4 @@ class AdminReviewImage(StatesGroup):
 class AdminBroadcastCreate(StatesGroup):
     title = State()
     body = State()
-    price = State()
+    interest_text = State()

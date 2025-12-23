@@ -20,7 +20,8 @@ async def handle_campaign_interest(callback: CallbackQuery):
     await db.update_campaign_audience_status(db_path, campaign_id, callback.from_user.id, "interested")
     await callback.answer()
     if callback.message:
-        await callback.message.answer(texts.campaign_interest_redirect())
+        redirect_text = campaign.get("interest_redirect") or ""
+        await callback.message.answer(redirect_text or texts.campaign_interest_redirect())
 
 @router.callback_query(F.data.startswith("campaign:decline:"))
 async def handle_campaign_decline(callback: CallbackQuery):

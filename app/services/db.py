@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS campaigns (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     body TEXT NOT NULL,
-    price_kopeks INTEGER NOT NULL
+    price_kopeks INTEGER NOT NULL,
+    interest_redirect TEXT NOT NULL
 );
 """
 
@@ -110,7 +111,7 @@ async def _ensure_campaigns_table(db: aiosqlite.Connection) -> None:
     cursor = await db.execute("PRAGMA table_info(campaigns)")
     rows = await cursor.fetchall()
     columns = [row[1] for row in rows]
-    expected = {"id", "title", "body", "price_kopeks"}
+    expected = {"id", "title", "body", "price_kopeks", "interest_redirect"}
     if not columns:
         await db.execute(CREATE_CAMPAIGNS_TABLE_SQL)
         return
@@ -122,8 +123,8 @@ async def _ensure_campaigns_table(db: aiosqlite.Connection) -> None:
     await db.execute(CREATE_CAMPAIGNS_TABLE_SQL)
     await db.execute(
         f"""
-        INSERT INTO campaigns (id, title, body, price_kopeks)
-        SELECT id, title, body, price_kopeks FROM {legacy_name}
+        INSERT INTO campaigns (id, title, body, price_kopeks, interest_redirect)
+        SELECT id, title, body, price_kopeks, '' FROM {legacy_name}
         """
     )
     await db.execute(f"DROP TABLE {legacy_name}")
@@ -585,15 +586,21 @@ async def update_payment_status(db_path: Path, provider_tx_id: str, status: str)
 # === Campaigns ===
 
 
-async def create_campaign(db_path: Path, title: str, body: str, price_kopeks: int) -> Campaign:
+async def create_campaign(
+    db_path: Path,
+    title: str,
+    body: str,
+    price_kopeks: int,
+    interest_redirect: str,
+) -> Campaign:
     campaign_id = str(uuid.uuid4())
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
             """
-            INSERT INTO campaigns (id, title, body, price_kopeks)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO campaigns (id, title, body, price_kopeks, interest_redirect)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (campaign_id, title, body, price_kopeks),
+            (campaign_id, title, body, price_kopeks, interest_redirect),
         )
         await db.commit()
     return {
@@ -601,6 +608,7 @@ async def create_campaign(db_path: Path, title: str, body: str, price_kopeks: in
         "title": title,
         "body": body,
         "price_kopeks": price_kopeks,
+        "interest_redirect": interest_redirect,
     }
 
 

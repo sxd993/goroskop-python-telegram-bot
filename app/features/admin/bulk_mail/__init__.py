@@ -183,13 +183,8 @@ async def handle_broadcast_item_select(callback: CallbackQuery, state: FSMContex
         await callback.answer("Рассылка не найдена", show_alert=True)
         return
 
-    price_rub = campaign["price_kopeks"] / 100
-
     await callback.message.answer(
-        texts.admin_broadcast_item_detail(
-            campaign["title"],
-            price_rub,
-        ),
+        texts.admin_broadcast_item_detail(campaign["title"]),
         reply_markup=build_broadcast_item_menu_keyboard(campaign_id),
     )
 
@@ -282,44 +277,31 @@ async def handle_broadcast_body(message: Message, state: FSMContext):
         return
 
     await state.update_data(body=message.text or "")
-    await state.set_state(AdminBroadcastCreate.price)
-    await message.answer(texts.admin_broadcast_prompt_price())
+    await state.set_state(AdminBroadcastCreate.interest_text)
+    await message.answer(texts.admin_broadcast_prompt_interest_redirect())
 
 
-def _parse_price_to_kopeks(text_value: str) -> int | None:
-    try:
-        cleaned = text_value.replace(" ", "").replace(",", ".")
-        price_rub = float(cleaned)
-        if price_rub < 0:
-            return None
-        return int(price_rub * 100)
-    except Exception:
-        return None
-
-
-@router.message(AdminBroadcastCreate.price)
-async def handle_broadcast_price(message: Message, state: FSMContext):
+@router.message(AdminBroadcastCreate.interest_text)
+async def handle_broadcast_interest_text(message: Message, state: FSMContext):
     if not _ensure_admin(message):
         await state.clear()
         await message.answer(texts.admin_forbidden())
         return
 
-    price_kopeks = _parse_price_to_kopeks(message.text or "")
-    if price_kopeks is None:
-        await message.answer(texts.admin_broadcast_prompt_price())
-        return
-
+    await state.update_data(interest_text=message.text or "")
     data = await state.get_data()
     title = data.get("title", "").strip() or "Без названия"
-    body = data.get("body", "").strip() or ""
+    body_text = data.get("body", "").strip() or ""
+    interest_text = data.get("interest_text", "").strip()
 
     await state.clear()
 
     campaign = await db.create_campaign(
         get_settings(message.bot).db_path,
         title,
-        body,
-        price_kopeks,
+        body_text,
+        0,
+        interest_text,
     )
 
     await message.answer(
@@ -345,6 +327,8 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Рассылка не найдена", show_alert=True)
         return
 
+    already_launched = await db.campaign_has_audience(db_path, campaign_id)
+
     audience = await db.fetch_paid_user_ids(db_path)
     if not audience:
         await callback.answer()
@@ -359,7 +343,9 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
     status_map: dict[int, str] = {row["user_id"]: row["status"] for row in audience_status_rows}
 
     await callback.answer()
-    await callback.message.answer(texts.admin_broadcast_launch_ack())
+    await callback.message.answer(
+        texts.admin_broadcast_launch_repeat_ack() if already_launched else texts.admin_broadcast_launch_ack()
+    )
 
     async def _send():
         sent = failed = 0
@@ -369,10 +355,7 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
             if status_map.get(user_id) in {"interested", "declined"}:
                 continue
             try:
-                text = texts.campaign_offer(
-                    campaign["body"],
-                    campaign["price_kopeks"] / 100,
-                )
+                text = texts.campaign_offer(campaign["body"])
 
                 msg = await send_message_safe(
                     callback.bot,
