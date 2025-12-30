@@ -29,6 +29,8 @@ class Review(TypedDict):
     product_id: str
     status: str
     text: Optional[str]
+    contact_phone: Optional[str]
+    contact_username: Optional[str]
     created_at: str
     answered_at: Optional[str]
 

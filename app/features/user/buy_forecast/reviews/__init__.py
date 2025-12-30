@@ -9,7 +9,9 @@ from app.features.user.keyboards import (
     REVIEW_CANCEL_CALLBACK,
     REVIEW_MENU_CALLBACK,
     build_review_cancel_keyboard,
+    build_review_contact_keyboard,
     build_review_keyboard,
+    remove_keyboard,
 )
 from app.services import db, media, state_machine
 from app.services.messaging import send_content, send_message_safe
@@ -46,11 +48,60 @@ async def handle_review_start(callback: CallbackQuery):
     if review["status"] != "pending":
         await callback.message.answer(texts.review_expired())
         return
+    if callback.from_user.username:
+        await db.update_review_contact(
+            db_path,
+            order_id,
+            callback.from_user.id,
+            username=callback.from_user.username,
+        )
     try:
         await callback.message.edit_reply_markup()
     except Exception:
         pass
-    await callback.message.answer(texts.review_request(), reply_markup=build_review_cancel_keyboard())
+    await callback.message.answer(texts.review_contact_request(), reply_markup=build_review_contact_keyboard())
+
+
+@router.message(F.contact)
+async def handle_review_contact(message: Message):
+    db_path = get_db_path(message.bot)
+    user_state = await state_machine.get_user_state(db_path, message.from_user.id)
+    if user_state != UserState.REVIEW_PENDING:
+        return
+    pending = await db.get_pending_review_for_user(db_path, message.from_user.id)
+    if not pending:
+        return
+    phone = message.contact.phone_number if message.contact else None
+    username = message.from_user.username
+    await db.update_review_contact(
+        db_path,
+        pending["order_id"],
+        message.from_user.id,
+        phone=phone,
+        username=username,
+    )
+    await message.answer("Можно писать отзыв.", reply_markup=remove_keyboard())
+    await message.answer(texts.review_request(), reply_markup=build_review_cancel_keyboard())
+
+
+@router.message(F.text == "⏭️ Пропустить")
+async def handle_review_contact_skip(message: Message):
+    db_path = get_db_path(message.bot)
+    user_state = await state_machine.get_user_state(db_path, message.from_user.id)
+    if user_state != UserState.REVIEW_PENDING:
+        return
+    pending = await db.get_pending_review_for_user(db_path, message.from_user.id)
+    if not pending:
+        return
+    username = message.from_user.username
+    await db.update_review_contact(
+        db_path,
+        pending["order_id"],
+        message.from_user.id,
+        username=username,
+    )
+    await message.answer("Можно писать отзыв.", reply_markup=remove_keyboard())
+    await message.answer(texts.review_request(), reply_markup=build_review_cancel_keyboard())
 
 
 @router.callback_query(F.data.startswith("review:skip:"))
@@ -114,6 +165,13 @@ async def handle_review_text(message: Message):
     pending = await db.get_pending_review_for_user(db_path, message.from_user.id)
     if not pending:
         return
+    if message.from_user.username:
+        await db.update_review_contact(
+            db_path,
+            pending["order_id"],
+            message.from_user.id,
+            username=message.from_user.username,
+        )
     await db.mark_review_submitted(db_path, pending["order_id"], review_text)
     parsed = parse_product(pending["product_id"])
     if parsed:
@@ -126,4 +184,4 @@ async def handle_review_text(message: Message):
         await state_machine.ensure_idle(db_path, message.from_user.id)
     except InvalidStateTransition:
         logger.warning("Review submit transition blocked user_id=%s order_id=%s", message.from_user.id, pending["order_id"])
-    await message.answer(texts.review_thanks())
+    await message.answer(texts.review_thanks(), reply_markup=remove_keyboard())

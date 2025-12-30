@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS reviews (
     product_id TEXT NOT NULL,
     status TEXT NOT NULL,
     text TEXT,
+    contact_phone TEXT,
+    contact_username TEXT,
     created_at TEXT NOT NULL,
     answered_at TEXT,
     FOREIGN KEY(order_id) REFERENCES orders(id)
@@ -131,13 +133,27 @@ async def _ensure_campaigns_table(db: aiosqlite.Connection) -> None:
     await db.commit()
 
 
+async def _ensure_reviews_table(db: aiosqlite.Connection) -> None:
+    cursor = await db.execute("PRAGMA table_info(reviews)")
+    rows = await cursor.fetchall()
+    if not rows:
+        await db.execute(CREATE_REVIEWS_TABLE_SQL)
+        return
+    columns = {row[1] for row in rows}
+    if "contact_phone" not in columns:
+        await db.execute("ALTER TABLE reviews ADD COLUMN contact_phone TEXT")
+    if "contact_username" not in columns:
+        await db.execute("ALTER TABLE reviews ADD COLUMN contact_username TEXT")
+    await db.commit()
+
+
 async def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(db_path) as db:
         await db.execute(CREATE_TABLE_SQL)
         await db.execute(CREATE_USERS_TABLE_SQL)
         await db.execute(CREATE_PAYMENTS_TABLE_SQL)
-        await db.execute(CREATE_REVIEWS_TABLE_SQL)
+        await _ensure_reviews_table(db)
         await _ensure_campaigns_table(db)
         await db.execute(CREATE_CAMPAIGN_AUDIENCE_SQL)
         await db.execute(CREATE_CAMPAIGN_RESPONSES_SQL)
@@ -370,9 +386,32 @@ async def create_review_request(
                 "product_id": product_id,
                 "status": "pending",
                 "text": None,
+                "contact_phone": None,
+                "contact_username": None,
                 "created_at": now,
                 "answered_at": None,
             }
+
+
+async def update_review_contact(
+    db_path: Path,
+    order_id: str,
+    user_id: int,
+    *,
+    phone: Optional[str] = None,
+    username: Optional[str] = None,
+) -> None:
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            UPDATE reviews
+            SET contact_phone = COALESCE(contact_phone, ?),
+                contact_username = COALESCE(contact_username, ?)
+            WHERE order_id = ? AND user_id = ?
+            """,
+            (phone, username, order_id, user_id),
+        )
+        await db.commit()
 
 
 async def mark_review_submitted(db_path: Path, order_id: str, text: str) -> None:

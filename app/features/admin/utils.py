@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 from aiogram.types import CallbackQuery, Message
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app import texts
 from app.config import SIGNS_RU
@@ -29,7 +30,14 @@ def product_label(product_id: str) -> str:
 
 def format_dt(value: str) -> str:
     try:
-        return dt.datetime.fromisoformat(value).strftime("%Y-%m-%d %H:%M")
+        parsed = dt.datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt.timezone.utc)
+        try:
+            tz = ZoneInfo("Europe/Moscow")
+        except ZoneInfoNotFoundError:
+            tz = dt.timezone(dt.timedelta(hours=3))
+        return parsed.astimezone(tz).strftime("%Y-%m-%d %H:%M (MSK)")
     except Exception:
         return value
 

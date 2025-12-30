@@ -117,6 +117,8 @@ async def handle_admin_review_open(callback: CallbackQuery, state: FSMContext):
             user_id=review["user_id"],
             status=review["status"],
             text=text,
+            contact_phone=review.get("contact_phone"),
+            contact_username=review.get("contact_username"),
         ),
         reply_markup=build_admin_review_detail_keyboard(page=page),
     )

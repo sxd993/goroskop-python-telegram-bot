@@ -4,6 +4,7 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
+    ReplyKeyboardRemove,
     ReplyKeyboardMarkup,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -155,6 +156,21 @@ def build_review_cancel_keyboard() -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+def build_review_contact_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📞 Поделиться номером", request_contact=True)],
+            [KeyboardButton(text="⏭️ Пропустить")],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
+def remove_keyboard() -> ReplyKeyboardRemove:
+    return ReplyKeyboardRemove()
 
 
 def build_campaign_interest_keyboard(campaign_id: str) -> InlineKeyboardMarkup:

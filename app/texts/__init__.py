@@ -323,6 +323,13 @@ def review_request() -> str:
     )
 
 
+def review_contact_request() -> str:
+    return (
+        "Чтобы мы могли связаться с тобой, поделись номером телефона. "
+        "Можно пропустить и сразу написать отзыв."
+    )
+
+
 def review_thanks() -> str:
     return "Спасибо за отзыв! Ты помог(ла) сделать сервис лучше."
 
@@ -359,13 +366,28 @@ def admin_reviews_page_title(page: int) -> str:
     return f"Отзывы (страница {page}). Выбери отзыв:"
 
 
-def admin_review_detail(title: str, created: str, order_tag: str, user_id: int, status: str, text: str) -> str:
+def admin_review_detail(
+    title: str,
+    created: str,
+    order_tag: str,
+    user_id: int,
+    status: str,
+    text: str,
+    contact_phone: str | None,
+    contact_username: str | None,
+) -> str:
     status_label = "Оставлен" if status == "submitted" else "Нет отзыва"
+    contact_value = "-"
+    if contact_username:
+        contact_value = f"@{contact_username}"
+    if contact_phone:
+        contact_value = f"{contact_value} / {contact_phone}" if contact_value != "-" else contact_phone
     return (
         f"{title}\n"
         f"Дата: {created}\n"
         f"Заказ: {order_tag}\n"
         f"User: {user_id}\n"
+        f"Контакт: {contact_value}\n"
         f"Статус: {status_label}\n\n"
         f"{text}"
     )
