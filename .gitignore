@@ -3,5 +3,5 @@
 __pycache__
 .venv
 media
-data
+data/bot.sqlite3
 .pytest_cache

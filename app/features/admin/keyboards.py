@@ -36,7 +36,11 @@ ADMIN_BROADCAST_RESPONSES_PREFIX = "admin:br:list"
 ADMIN_BROADCAST_RESPONSES_ITEM_PREFIX = "admin:br:item"
 ADMIN_BACK_MENU_CALLBACK = "admin-back:menu"
 ADMIN_REVIEWS_PAGE_PREFIX = "admin-reviews:page"
-ADMIN_REVIEW_OPEN_PREFIX = "admin-review:open"
+ADMIN_REVIEWS_KIND_PREFIX = "admin-reviews:kind"
+ADMIN_REVIEWS_FILTER_PAGE_PREFIX = "admin-reviews:pagef"
+ADMIN_REVIEWS_MONTHS_PAGE_PREFIX = "admin-reviews:months-page"
+ADMIN_REVIEWS_MONTH_OPEN_PREFIX = "admin-reviews:month-open"
+ADMIN_REVIEW_OPEN_PREFIX = "ar:o"
 ADMIN_STATS_MONTHS_PAGE_PREFIX = "admin-stats:months-page"
 ADMIN_STATS_MONTH_OPEN_PREFIX = "admin-stats:month-open"
 
@@ -115,36 +119,29 @@ def build_admin_delete_confirm_keyboard(action: str) -> InlineKeyboardMarkup:
 def build_admin_reviews_list_keyboard(
     items: list[tuple[str, str]],
     *,
-    page: int,
-    has_prev: bool,
-    has_next: bool,
+    prev_callback: str | None,
+    next_callback: str | None,
+    back_callback: str | None = None,
     include_back_to_menu: bool = True,
 ) -> InlineKeyboardMarkup:
     """
-    items: list of (button_text, review_id)
+    items: list of (button_text, callback_data)
     """
     builder = InlineKeyboardBuilder()
-    for text, review_id in items:
-        builder.button(text=text, callback_data=f"{ADMIN_REVIEW_OPEN_PREFIX}:{review_id}:{page}")
+    for text, callback_data in items:
+        builder.button(text=text, callback_data=callback_data)
     builder.adjust(1)
 
     nav: list[InlineKeyboardButton] = []
-    if has_prev:
-        nav.append(
-            InlineKeyboardButton(
-                text="⬅️ Назад",
-                callback_data=f"{ADMIN_REVIEWS_PAGE_PREFIX}:{page - 1}",
-            )
-        )
-    if has_next:
-        nav.append(
-            InlineKeyboardButton(
-                text="➡️ Далее",
-                callback_data=f"{ADMIN_REVIEWS_PAGE_PREFIX}:{page + 1}",
-            )
-        )
+    if prev_callback:
+        nav.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=prev_callback))
+    if next_callback:
+        nav.append(InlineKeyboardButton(text="➡️ Далее", callback_data=next_callback))
     if nav:
         builder.row(*nav)
+
+    if back_callback:
+        builder.row(InlineKeyboardButton(text="⬅️ К типам", callback_data=back_callback))
 
     if include_back_to_menu:
         builder.row(InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK))
@@ -152,13 +149,52 @@ def build_admin_reviews_list_keyboard(
     return builder.as_markup()
 
 
-def build_admin_review_detail_keyboard(*, page: int) -> InlineKeyboardMarkup:
+def build_admin_review_detail_keyboard(*, back_callback: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ К списку", callback_data=f"{ADMIN_REVIEWS_PAGE_PREFIX}:{page}")],
+            [InlineKeyboardButton(text="⬅️ К списку", callback_data=back_callback)],
             [InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)],
         ]
     )
+
+
+def build_admin_reviews_kind_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📅 Годовые", callback_data=f"{ADMIN_REVIEWS_KIND_PREFIX}:year")
+    builder.button(text="🗓️ Месячные", callback_data=f"{ADMIN_REVIEWS_KIND_PREFIX}:month")
+    builder.adjust(2)
+    builder.row(InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK))
+    return builder.as_markup()
+
+
+def build_admin_reviews_months_keyboard(
+    items: list[tuple[str, str]],
+    *,
+    page: int,
+    prev_callback: str | None,
+    next_callback: str | None,
+    include_back_to_kinds: bool = True,
+) -> InlineKeyboardMarkup:
+    """
+    items: list of (button_text, ym)
+    """
+    builder = InlineKeyboardBuilder()
+    for text, ym in items:
+        builder.button(text=text, callback_data=f"{ADMIN_REVIEWS_MONTH_OPEN_PREFIX}:{ym}:{page}")
+    builder.adjust(1)
+
+    nav: list[InlineKeyboardButton] = []
+    if prev_callback:
+        nav.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=prev_callback))
+    if next_callback:
+        nav.append(InlineKeyboardButton(text="➡️ Далее", callback_data=next_callback))
+    if nav:
+        builder.row(*nav)
+
+    if include_back_to_kinds:
+        builder.row(InlineKeyboardButton(text="⬅️ К типам", callback_data=ADMIN_REVIEWS_CALLBACK))
+    builder.row(InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK))
+    return builder.as_markup()
 
 
 def build_admin_stats_months_keyboard(

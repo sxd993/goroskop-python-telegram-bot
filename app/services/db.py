@@ -497,6 +497,51 @@ async def fetch_reviews_page(db_path: Path, limit: int, offset: int) -> list[Rev
             return [Review(dict(row)) for row in rows]
 
 
+async def fetch_reviews_page_filtered(
+    db_path: Path,
+    *,
+    kind: str,
+    ym: Optional[str],
+    limit: int,
+    offset: int,
+) -> list[Review]:
+    pattern = "year:%"
+    if kind == "month":
+        pattern = f"month:{ym}:%" if ym else "month:%"
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT *
+            FROM reviews
+            WHERE status IN ('submitted', 'declined')
+              AND product_id LIKE ?
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (pattern, limit, offset),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [Review(dict(row)) for row in rows]
+
+
+async def fetch_review_months_page(db_path: Path, *, limit: int, offset: int) -> list[str]:
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT DISTINCT substr(product_id, 7, 7) AS ym
+            FROM reviews
+            WHERE status IN ('submitted', 'declined')
+              AND product_id LIKE 'month:%'
+            ORDER BY ym DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [row[0] for row in rows if row and row[0]]
+
+
 async def get_review(db_path: Path, review_id: str) -> Optional[Review]:
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row

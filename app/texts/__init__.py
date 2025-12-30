@@ -366,6 +366,22 @@ def admin_reviews_page_title(page: int) -> str:
     return f"Отзывы (страница {page}). Выбери отзыв:"
 
 
+def admin_reviews_kind_prompt() -> str:
+    return "Отзывы: выбери тип."
+
+
+def admin_reviews_months_title(page: int) -> str:
+    return f"Месячные отзывы (страница {page}). Выбери месяц:"
+
+
+def admin_reviews_months_empty() -> str:
+    return "Пока нет месячных отзывов."
+
+
+def admin_reviews_filtered_title(title: str, page: int) -> str:
+    return f"{title} (страница {page}). Выбери отзыв:"
+
+
 def admin_review_detail(
     title: str,
     created: str,
