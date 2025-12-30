@@ -12,12 +12,14 @@ from app.features.admin.keyboards import (
     ADMIN_BROADCASTS_CALLBACK,
     ADMIN_BROADCAST_CREATE_CALLBACK,
     ADMIN_BROADCAST_DELETE_PREFIX,
+    ADMIN_BROADCAST_BODY_PREFIX,
     ADMIN_BROADCAST_ITEM_PREFIX,
     ADMIN_BROADCAST_LIST_CALLBACK,
     ADMIN_BROADCAST_LAUNCH_PREFIX,
     ADMIN_BROADCAST_STATS_PREFIX,
     ADMIN_BROADCAST_RESPONSES_PREFIX,
     ADMIN_BROADCAST_RESPONSES_ITEM_PREFIX,
+    build_broadcast_body_keyboard,
     build_broadcast_item_menu_keyboard,
     build_broadcast_responses_list_keyboard,
     build_broadcast_response_detail_keyboard,
@@ -188,6 +190,28 @@ async def handle_broadcast_item_select(callback: CallbackQuery, state: FSMContex
     await callback.message.answer(
         texts.admin_broadcast_item_detail(campaign["title"]),
         reply_markup=build_broadcast_item_menu_keyboard(campaign_id),
+    )
+
+
+@router.callback_query(F.data.startswith(f"{ADMIN_BROADCAST_BODY_PREFIX}:"))
+async def handle_broadcast_body(callback: CallbackQuery, state: FSMContext):
+    if not _ensure_admin(callback):
+        await callback.answer(texts.admin_forbidden(), show_alert=True)
+        return
+
+    await state.clear()
+    campaign_id = (callback.data or "").split(":", maxsplit=3)[-1]
+    db_path = get_settings(callback.bot).db_path
+
+    campaign = await db.get_campaign(db_path, campaign_id)
+    if not campaign:
+        await callback.answer("Рассылка не найдена", show_alert=True)
+        return
+
+    await callback.answer()
+    await callback.message.answer(
+        texts.admin_broadcast_body_detail(campaign["title"], campaign["body"]),
+        reply_markup=build_broadcast_body_keyboard(campaign_id),
     )
 
 

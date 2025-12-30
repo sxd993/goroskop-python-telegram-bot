@@ -487,6 +487,17 @@ def admin_broadcast_item_detail(title: str) -> str:
     )
 
 
+def admin_broadcast_body_detail(title: str, body: str) -> str:
+    body_text = body.strip()
+    if not body_text:
+        body_text = "Текст рассылки пока пуст."
+    return (
+        f"Рассылка «{title}»\n\n"
+        "Текст рассылки:\n"
+        f"{body_text}"
+    )
+
+
 def admin_broadcast_deleted(title: str) -> str:
     return f"Рассылка «{title}» удалена."
 
