@@ -41,8 +41,11 @@ ADMIN_REVIEWS_FILTER_PAGE_PREFIX = "admin-reviews:pagef"
 ADMIN_REVIEWS_MONTHS_PAGE_PREFIX = "admin-reviews:months-page"
 ADMIN_REVIEWS_MONTH_OPEN_PREFIX = "admin-reviews:month-open"
 ADMIN_REVIEW_OPEN_PREFIX = "ar:o"
+ADMIN_STATS_KIND_PREFIX = "admin-stats:kind"
 ADMIN_STATS_MONTHS_PAGE_PREFIX = "admin-stats:months-page"
 ADMIN_STATS_MONTH_OPEN_PREFIX = "admin-stats:month-open"
+ADMIN_STATS_YEARS_PAGE_PREFIX = "admin-stats:years-page"
+ADMIN_STATS_YEAR_OPEN_PREFIX = "admin-stats:year-open"
 
 
 def build_admin_menu() -> InlineKeyboardMarkup:
@@ -197,6 +200,15 @@ def build_admin_reviews_months_keyboard(
     return builder.as_markup()
 
 
+def build_admin_stats_kind_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📅 Годовые", callback_data=f"{ADMIN_STATS_KIND_PREFIX}:year")
+    builder.button(text="🗓️ Месячные", callback_data=f"{ADMIN_STATS_KIND_PREFIX}:month")
+    builder.adjust(2)
+    builder.row(InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK))
+    return builder.as_markup()
+
+
 def build_admin_stats_months_keyboard(
     items: list[tuple[str, str]],
     *,
@@ -237,10 +249,59 @@ def build_admin_stats_months_keyboard(
     return builder.as_markup()
 
 
+def build_admin_stats_years_keyboard(
+    items: list[tuple[str, str]],
+    *,
+    page: int,
+    has_prev: bool,
+    has_next: bool,
+    include_back_to_menu: bool = True,
+) -> InlineKeyboardMarkup:
+    """
+    items: list of (button_text, year)
+    """
+    builder = InlineKeyboardBuilder()
+    for text, year in items:
+        builder.button(text=text, callback_data=f"{ADMIN_STATS_YEAR_OPEN_PREFIX}:{year}:{page}")
+    builder.adjust(1)
+
+    nav: list[InlineKeyboardButton] = []
+    if has_prev:
+        nav.append(
+            InlineKeyboardButton(
+                text="⬅️ Назад",
+                callback_data=f"{ADMIN_STATS_YEARS_PAGE_PREFIX}:{page - 1}",
+            )
+        )
+    if has_next:
+        nav.append(
+            InlineKeyboardButton(
+                text="➡️ Далее",
+                callback_data=f"{ADMIN_STATS_YEARS_PAGE_PREFIX}:{page + 1}",
+            )
+        )
+    if nav:
+        builder.row(*nav)
+
+    if include_back_to_menu:
+        builder.row(InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK))
+
+    return builder.as_markup()
+
+
 def build_admin_stats_month_detail_keyboard(*, page: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="⬅️ К месяцам", callback_data=f"{ADMIN_STATS_MONTHS_PAGE_PREFIX}:{page}")],
+            [InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)],
+        ]
+    )
+
+
+def build_admin_stats_year_detail_keyboard(*, page: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ К годам", callback_data=f"{ADMIN_STATS_YEARS_PAGE_PREFIX}:{page}")],
             [InlineKeyboardButton(text="⬅️ В меню", callback_data=ADMIN_BACK_MENU_CALLBACK)],
         ]
     )

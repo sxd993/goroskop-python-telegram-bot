@@ -275,12 +275,24 @@ def admin_stats_choose_month(page: int) -> str:
     return f"Статистика продаж по месяцам (страница {page}). Выбери месяц:"
 
 
+def admin_stats_choose_year(page: int) -> str:
+    return f"Статистика продаж по годам (страница {page}). Выбери год:"
+
+
 def admin_stats_month_title(month_name: str, year: str) -> str:
     return f"Статистика продаж за {month_name} {year} (оплаченные):"
 
 
 def admin_stats_month_empty(month_name: str, year: str) -> str:
     return f"За {month_name} {year} пока нет оплаченных заказов."
+
+
+def admin_stats_year_title(year: str) -> str:
+    return f"Статистика продаж за {year} год (оплаченные):"
+
+
+def admin_stats_year_empty(year: str) -> str:
+    return f"За {year} год пока нет оплаченных заказов."
 
 
 def admin_stats_total(count: int, total_rub: float) -> str:

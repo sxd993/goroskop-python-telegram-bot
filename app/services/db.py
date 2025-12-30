@@ -327,6 +327,25 @@ async def fetch_paid_months_page(db_path: Path, *, limit: int, offset: int) -> l
             return [row[0] for row in rows]
 
 
+async def fetch_paid_years_page(db_path: Path, *, limit: int, offset: int) -> list[str]:
+    """
+    Returns distinct YYYY values for paid yearly products, ordered by newest first.
+    """
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT DISTINCT substr(product_id, 6, 4) AS year
+            FROM orders
+            WHERE status = 'paid' AND product_id LIKE 'year:%'
+            ORDER BY year DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [row[0] for row in rows]
+
+
 async def fetch_month_sales_breakdown(db_path: Path, *, ym: str) -> list[tuple[str, int, int]]:
     """
     Returns list of tuples: (sign, paid_count, total_amount_kopeks) for a given YYYY-MM month product.
@@ -348,6 +367,27 @@ async def fetch_month_sales_breakdown(db_path: Path, *, ym: str) -> list[tuple[s
             rows = await cursor.fetchall()
             return [(row[0], row[1], row[2]) for row in rows]
 
+
+async def fetch_year_sales_breakdown(db_path: Path, *, year: str) -> list[tuple[str, int, int]]:
+    """
+    Returns list of tuples: (sign, paid_count, total_amount_kopeks) for a given yearly product.
+    """
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT
+                substr(product_id, length('year:' || ? || ':') + 1) AS sign,
+                COUNT(*) AS paid_count,
+                SUM(amount_kopeks) AS total_amount
+            FROM orders
+            WHERE status = 'paid' AND product_id LIKE ('year:' || ? || ':%')
+            GROUP BY sign
+            ORDER BY paid_count DESC, sign ASC
+            """,
+            (year, year),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [(row[0], row[1], row[2]) for row in rows]
 
 async def create_review_request(
     db_path: Path,
