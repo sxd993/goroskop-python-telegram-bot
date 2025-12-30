@@ -69,13 +69,30 @@ def detect_extension(message: Message) -> Optional[str]:
     return None
 
 
-def destination_path(kind: str, media_dir: Path, year: str, sign: str, extension: str, month: str | None) -> Path:
+def destination_path(
+    kind: str,
+    media_dir: Path,
+    year: str,
+    sign: str,
+    extension: str,
+    month: str | None,
+    unique: str | None = None,
+) -> Path:
     if kind == "year":
-        target_dir = media_dir / "year" / year
+        target_dir = media_dir / "year" / year / sign
     else:
-        target_dir = media_dir / "month" / year / (month or "01")
+        target_dir = media_dir / "month" / year / (month or "01") / sign
     target_dir.mkdir(parents=True, exist_ok=True)
-    return target_dir / f"{sign}.{extension}"
+    timestamp = dt.datetime.now().strftime("%Y%m%d%H%M%S")
+    base_name = f"{sign}-{timestamp}"
+    if unique:
+        base_name = f"{base_name}-{unique}"
+    destination = target_dir / f"{base_name}.{extension}"
+    counter = 1
+    while destination.exists():
+        destination = target_dir / f"{base_name}-{counter}.{extension}"
+        counter += 1
+    return destination
 
 
 async def save_media(message: Message, destination: Path) -> bool:

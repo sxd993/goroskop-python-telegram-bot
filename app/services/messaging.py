@@ -10,7 +10,7 @@ from aiogram.exceptions import (
     TelegramRetryAfter,
     TelegramServerError,
 )
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile, InputMediaPhoto
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ async def send_with_retry(call: TelegramCall, *, attempts: int = 3, base_delay: 
         raise last_exc
 
 
-async def send_content(bot: Bot, chat_id: int, path: Path, caption: str) -> bool:
+async def send_content(bot: Bot, chat_id: int, path: Path, caption: Optional[str] = None) -> bool:
     try:
         mtime_tag = int(path.stat().st_mtime)
         filename = f"{path.stem}-{mtime_tag}{path.suffix}"
@@ -63,6 +63,28 @@ async def send_content(bot: Bot, chat_id: int, path: Path, caption: str) -> bool
     except Exception:
         logger.exception("Failed to send content %s", path)
         return False
+
+
+async def send_contents(bot: Bot, chat_id: int, paths: list[Path], caption: str) -> bool:
+    if not paths:
+        return False
+    if len(paths) == 1:
+        return await send_content(bot, chat_id, paths[0], caption=caption)
+    chunk_size = 10
+    for start in range(0, len(paths), chunk_size):
+        chunk = paths[start:start + chunk_size]
+        media: list[InputMediaPhoto] = []
+        for index, path in enumerate(chunk):
+            mtime_tag = int(path.stat().st_mtime)
+            filename = f"{path.stem}-{mtime_tag}{path.suffix}"
+            item_caption = caption if start == 0 and index == 0 else None
+            media.append(InputMediaPhoto(media=FSInputFile(path, filename=filename), caption=item_caption))
+        try:
+            await send_with_retry(lambda: bot.send_media_group(chat_id, media=media))
+        except Exception:
+            logger.exception("Failed to send media group chunk starting at %s", start)
+            return False
+    return True
 
 
 async def send_message_safe(bot: Bot, chat_id: int, text: str, **kwargs) -> bool:

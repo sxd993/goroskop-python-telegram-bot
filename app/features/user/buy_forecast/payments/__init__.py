@@ -10,7 +10,7 @@ from app.features.user.dependencies import ensure_user, get_db_path, get_setting
 from app.features.user.keyboards import build_review_cancel_keyboard
 from ..reviews import prompt_review
 from app.services import db, media, payments, state_machine
-from app.services.messaging import send_content, send_message_safe
+from app.services.messaging import send_contents, send_message_safe
 from app.services.payments import PaymentStatus
 from app.services.pricing import get_price_kopeks
 from app.services.parsing import (
@@ -78,19 +78,19 @@ async def handle_pay(callback: CallbackQuery):
     if user_state == UserState.REVIEW_PENDING:
         await callback.message.answer(texts.review_request(), reply_markup=build_review_cancel_keyboard())
         return
-    content_path: Path | None = None
+    content_paths: list[Path] = []
     if parsed["kind"] == "month" and parsed["month"]:
         ym = f"{parsed['year']}-{parsed['month']}"
         if ym not in media.months_for_year(media_dir, parsed["year"]) or parsed["sign"] not in media.available_month_signs(media_dir, ym):
             await callback.message.answer(texts.content_missing())
             return
-        content_path = media.find_month_content_path(media_dir, ym, parsed["sign"])
+        content_paths = media.find_month_content_paths(media_dir, ym, parsed["sign"])
     else:
         if parsed["year"] not in media.available_yearly_years(media_dir) or parsed["sign"] not in media.available_year_signs(media_dir, parsed["year"]):
             await callback.message.answer(texts.content_missing())
             return
-        content_path = media.find_year_content_path(media_dir, parsed["year"], parsed["sign"])
-    if not content_path:
+        content_paths = media.find_year_content_paths(media_dir, parsed["year"], parsed["sign"])
+    if not content_paths:
         await callback.message.answer(texts.content_missing())
         return
     amount_kopeks = get_price_kopeks(parsed["kind"], pricing_path=settings.pricing_path)
@@ -155,13 +155,13 @@ async def handle_pre_checkout(query: PreCheckoutQuery):
         exists = (
             ym in media.months_for_year(media_dir, product["year"])
             and product["sign"] in media.available_month_signs(media_dir, ym)
-            and media.find_month_content_path(media_dir, ym, product["sign"]) is not None
+            and bool(media.find_month_content_paths(media_dir, ym, product["sign"]))
         )
     else:
         exists = (
             product["year"] in media.available_yearly_years(media_dir)
             and product["sign"] in media.available_year_signs(media_dir, product["year"])
-            and media.find_year_content_path(media_dir, product["year"], product["sign"]) is not None
+            and bool(media.find_year_content_paths(media_dir, product["year"], product["sign"]))
         )
     if not exists:
         await query.answer(ok=False, error_message="Контент недоступен.")
@@ -171,7 +171,7 @@ async def handle_pre_checkout(query: PreCheckoutQuery):
     logger.info("Pre-checkout ok user=%s payload=%s", query.from_user.id, query.invoice_payload)
 
 
-async def deliver_file(bot: Bot, chat_id: int, order: dict, content_path: Path) -> bool:
+async def deliver_file(bot: Bot, chat_id: int, order: dict, content_paths: list[Path]) -> bool:
     db_path = get_db_path(bot)
     user_id = order.get("user_id", chat_id)
     if order.get("delivered_at"):
@@ -188,7 +188,7 @@ async def deliver_file(bot: Bot, chat_id: int, order: dict, content_path: Path) 
         caption = f"{month_name} {parsed['year']}, {sign_name}"
     else:
         caption = f"{parsed['year']} год, {sign_name}"
-    delivered = await send_content(bot, chat_id, content_path, caption)
+    delivered = await send_contents(bot, chat_id, content_paths, caption)
     if delivered:
         await db.mark_delivered(db_path, order["id"])
         try:
@@ -226,13 +226,13 @@ async def handle_successful_payment(message: Message):
         return
     settings = get_settings(message.bot)
     media_dir = settings.media_dir
-    content_path: Path | None = None
+    content_paths: list[Path] = []
     if product["kind"] == "month" and product["month"]:
         ym = f"{product['year']}-{product['month']}"
-        content_path = media.find_month_content_path(media_dir, ym, product["sign"])
+        content_paths = media.find_month_content_paths(media_dir, ym, product["sign"])
     else:
-        content_path = media.find_year_content_path(media_dir, product["year"], product["sign"])
-    if not content_path:
+        content_paths = media.find_year_content_paths(media_dir, product["year"], product["sign"])
+    if not content_paths:
         await message.answer(texts.file_missing_after_pay())
         return
     product_id = (
@@ -276,4 +276,4 @@ async def handle_successful_payment(message: Message):
         payment.telegram_payment_charge_id,
     )
     await message.answer(texts.payment_success())
-    await deliver_file(message.bot, message.chat.id, order, content_path)
+    await deliver_file(message.bot, message.chat.id, order, content_paths)

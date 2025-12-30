@@ -163,8 +163,8 @@ async def handle_month_sign(callback: CallbackQuery):
     if sign not in media.available_month_signs(media_dir, ym):
         await callback.message.answer(texts.sign_unavailable())
         return
-    content_path = media.find_month_content_path(media_dir, ym, sign)
-    if not content_path:
+    content_paths = media.find_month_content_paths(media_dir, ym, sign)
+    if not content_paths:
         await callback.message.answer(texts.content_missing())
         return
     product_id = media.build_month_product_id(ym, sign)
@@ -251,8 +251,8 @@ async def handle_year_sign(callback: CallbackQuery):
     if sign not in media.available_year_signs(media_dir, year):
         await callback.message.answer(texts.sign_unavailable())
         return
-    content_path = media.find_year_content_path(media_dir, year, sign)
-    if not content_path:
+    content_paths = media.find_year_content_paths(media_dir, year, sign)
+    if not content_paths:
         await callback.message.answer(texts.content_missing())
         return
     product_id = media.build_year_product_id(year, sign)

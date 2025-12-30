@@ -159,43 +159,50 @@ def save_review_image(media_dir: Path, sign: str, source_path: Path) -> bool:
         return False
 
 
-def find_year_content_path(media_dir: Path, year: str, sign: str) -> Optional[Path]:
-    if not is_valid_year(year) or sign not in SIGNS_RU:
-        return None
-    target_dir = _root_dir(media_dir, _YEAR_DIRNAME) / year
-    if not target_dir.exists():
-        return None
+def _collect_content_paths(target_dir: Path, sign: str) -> List[Path]:
+    paths: List[Path] = []
     for ext in ALLOWED_EXTENSIONS:
         candidate = target_dir / f"{sign}.{ext}"
         if candidate.is_file():
-            return candidate
-        nested = target_dir / sign / f"{sign}.{ext}"
-        if nested.is_file():
-            return nested
-        nested_any = next((p for p in (target_dir / sign).glob(f"*.{ext}") if p.is_file()), None)
-        if nested_any:
-            return nested_any
-    return None
+            paths.append(candidate)
+    sign_dir = target_dir / sign
+    if sign_dir.is_dir():
+        sign_paths = [
+            path
+            for path in sign_dir.iterdir()
+            if path.is_file() and path.suffix.lower().lstrip(".") in ALLOWED_EXTENSIONS
+        ]
+        paths.extend(sorted(sign_paths, key=lambda path: path.name))
+    return paths
+
+
+def find_year_content_paths(media_dir: Path, year: str, sign: str) -> List[Path]:
+    if not is_valid_year(year) or sign not in SIGNS_RU:
+        return []
+    target_dir = _root_dir(media_dir, _YEAR_DIRNAME) / year
+    if not target_dir.exists():
+        return []
+    return _collect_content_paths(target_dir, sign)
+
+
+def find_year_content_path(media_dir: Path, year: str, sign: str) -> Optional[Path]:
+    paths = find_year_content_paths(media_dir, year, sign)
+    return paths[0] if paths else None
+
+
+def find_month_content_paths(media_dir: Path, ym: str, sign: str) -> List[Path]:
+    match = parse_year_month(ym)
+    if not match or sign not in SIGNS_RU:
+        return []
+    target_dir = _root_dir(media_dir, _MONTH_DIRNAME) / match.group("year") / match.group("month")
+    if not target_dir.exists():
+        return []
+    return _collect_content_paths(target_dir, sign)
 
 
 def find_month_content_path(media_dir: Path, ym: str, sign: str) -> Optional[Path]:
-    match = parse_year_month(ym)
-    if not match or sign not in SIGNS_RU:
-        return None
-    target_dir = _root_dir(media_dir, _MONTH_DIRNAME) / match.group("year") / match.group("month")
-    if not target_dir.exists():
-        return None
-    for ext in ALLOWED_EXTENSIONS:
-        candidate = target_dir / f"{sign}.{ext}"
-        if candidate.is_file():
-            return candidate
-        nested = target_dir / sign / f"{sign}.{ext}"
-        if nested.is_file():
-            return nested
-        nested_any = next((p for p in (target_dir / sign).glob(f"*.{ext}") if p.is_file()), None)
-        if nested_any:
-            return nested_any
-    return None
+    paths = find_month_content_paths(media_dir, ym, sign)
+    return paths[0] if paths else None
 
 
 def _cleanup_empty_dir(path: Path) -> None:
@@ -226,29 +233,34 @@ def _cleanup_year_tree(media_dir: Path, year: str, sign: str) -> None:
 
 
 def delete_month_content(media_dir: Path, ym: str, sign: str) -> bool:
-    path = find_month_content_path(media_dir, ym, sign)
-    if not path:
+    paths = find_month_content_paths(media_dir, ym, sign)
+    if not paths:
         return False
-    try:
-        path.unlink()
-    except OSError:
-        return False
-    if path.parent.name == sign:
-        _cleanup_empty_dir(path.parent)
+    for path in paths:
+        try:
+            path.unlink()
+        except OSError:
+            return False
+    match = parse_year_month(ym)
+    if match:
+        sign_dir = _root_dir(media_dir, _MONTH_DIRNAME) / match.group("year") / match.group("month") / sign
+        _cleanup_empty_dir(sign_dir)
     _cleanup_month_tree(media_dir, ym, sign)
     return True
 
 
 def delete_year_content(media_dir: Path, year: str, sign: str) -> bool:
-    path = find_year_content_path(media_dir, year, sign)
-    if not path:
+    paths = find_year_content_paths(media_dir, year, sign)
+    if not paths:
         return False
-    try:
-        path.unlink()
-    except OSError:
-        return False
-    if path.parent.name == sign:
-        _cleanup_empty_dir(path.parent)
+    for path in paths:
+        try:
+            path.unlink()
+        except OSError:
+            return False
+    if is_valid_year(year):
+        sign_dir = _root_dir(media_dir, _YEAR_DIRNAME) / year / sign
+        _cleanup_empty_dir(sign_dir)
     _cleanup_year_tree(media_dir, year, sign)
     return True
 

@@ -218,16 +218,16 @@ def admin_invalid_type() -> str:
 def admin_prompt_file_month(year: str, month: str, sign: str) -> str:
     sign_name = SIGNS_RU.get(sign, sign)
     return (
-        f"{month}.{year}, {sign_name}. Отправь изображение знака (jpg/png/webp) "
-        "файлом или фото."
+        f"{month}.{year}, {sign_name}. Отправь изображения (jpg/png/webp) "
+        "файлом или фото. Можно одним альбомом (медиагруппой)."
     )
 
 
 def admin_prompt_file_year(year: str, sign: str) -> str:
     sign_name = SIGNS_RU.get(sign, sign)
     return (
-        f"{year} год, {sign_name}. Отправь изображение знака (jpg/png/webp) "
-        "файлом или фото."
+        f"{year} год, {sign_name}. Отправь изображения (jpg/png/webp) "
+        "файлом или фото. Можно одним альбомом (медиагруппой)."
     )
 
 
@@ -303,6 +303,16 @@ def admin_save_success_month(year: str, month: str, sign: str) -> str:
 def admin_save_success_year(year: str, sign: str) -> str:
     sign_name = SIGNS_RU.get(sign, sign)
     return f"Файл для {year} года, {sign_name} сохранен."
+
+
+def admin_upload_finished_month(year: str, month: str, sign: str) -> str:
+    sign_name = SIGNS_RU.get(sign, sign)
+    return f"Загрузка завершена для {month}.{year}, {sign_name}."
+
+
+def admin_upload_finished_year(year: str, sign: str) -> str:
+    sign_name = SIGNS_RU.get(sign, sign)
+    return f"Загрузка завершена для {year} года, {sign_name}."
 
 
 def review_prompt() -> str:

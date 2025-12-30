@@ -1,3 +1,5 @@
+import asyncio
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
@@ -17,6 +19,32 @@ from app.features.admin.utils import destination_path, detect_extension, save_me
 from app.services import media
 
 router = Router()
+_MEDIA_GROUP_TASKS: dict[tuple[int, int, str], asyncio.Task] = {}
+
+
+def _media_group_key(message: Message) -> tuple[int, int, str]:
+    return (message.chat.id, message.from_user.id, message.media_group_id or "")
+
+
+async def _finish_media_group(
+    message: Message,
+    state: FSMContext,
+    kind: str,
+    year: str,
+    month: str | None,
+    sign: str,
+) -> None:
+    try:
+        await asyncio.sleep(1.0)
+        await state.clear()
+        if kind == "year":
+            await message.bot.send_message(message.chat.id, texts.admin_upload_finished_year(year, sign))
+        else:
+            await message.bot.send_message(message.chat.id, texts.admin_upload_finished_month(year, month or "01", sign))
+        await message.bot.send_message(message.chat.id, texts.admin_menu(), reply_markup=build_admin_menu())
+    except asyncio.CancelledError:
+        return
+    _MEDIA_GROUP_TASKS.pop(_media_group_key(message), None)
 
 @router.callback_query(F.data == ADMIN_ADD_FORECAST_CALLBACK)
 async def handle_admin_add(callback: CallbackQuery, state: FSMContext):
@@ -159,14 +187,27 @@ async def handle_admin_file(message: Message, state: FSMContext):
         await state.clear()
         await message.answer(texts.admin_session_reset())
         return
-    destination = destination_path(kind, settings.media_dir, year, sign, extension, month)
-    for ext in media.ALLOWED_EXTENSIONS:
-        existing = destination.with_suffix(f".{ext}")
-        if existing.exists():
-            existing.unlink()
+    destination = destination_path(
+        kind,
+        settings.media_dir,
+        year,
+        sign,
+        extension,
+        month,
+        unique=str(message.message_id),
+    )
     success = await save_media(message, destination)
     if not success:
         await message.answer(texts.admin_save_failed())
+        return
+    if message.media_group_id:
+        key = _media_group_key(message)
+        existing_task = _MEDIA_GROUP_TASKS.get(key)
+        if existing_task:
+            existing_task.cancel()
+        _MEDIA_GROUP_TASKS[key] = asyncio.create_task(
+            _finish_media_group(message, state, kind, year, month, sign)
+        )
         return
     await state.clear()
     if kind == "year":
