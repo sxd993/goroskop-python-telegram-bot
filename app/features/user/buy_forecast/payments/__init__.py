@@ -98,9 +98,24 @@ async def handle_pay(callback: CallbackQuery):
     try:
         await state_machine.set_order_initiated(db_path, callback.from_user.id, order["id"])
     except InvalidStateTransition:
-        logger.warning("Order initiation rejected by state machine user_id=%s", callback.from_user.id)
-        await send_message_safe(callback.bot, callback.message.chat.id, texts.temporary_error())
-        return
+        user = await db.get_user(db_path, callback.from_user.id)
+        logger.warning(
+            "Order initiation rejected by state machine user_id=%s state=%s last_order_id=%s",
+            callback.from_user.id,
+            user["state"] if user else None,
+            user.get("last_order_id") if user else None,
+        )
+        await state_machine.ensure_idle(db_path, callback.from_user.id)
+        try:
+            await state_machine.set_order_initiated(db_path, callback.from_user.id, order["id"])
+        except InvalidStateTransition:
+            logger.warning(
+                "Order initiation still rejected after reset user_id=%s order_id=%s",
+                callback.from_user.id,
+                order["id"],
+            )
+            await send_message_safe(callback.bot, callback.message.chat.id, texts.temporary_error())
+            return
     try:
         await send_invoice(callback, product_id, order["id"])
     except Exception:
