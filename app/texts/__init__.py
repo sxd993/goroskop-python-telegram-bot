@@ -393,8 +393,11 @@ def review_reward_caption(sign: str) -> str:
 # === Broadcasts ===
 
 
-def admin_broadcasts_menu() -> str:
-    return "Рассылки: выбери действие."
+def admin_broadcasts_menu(audience_size: int) -> str:
+    return (
+        "Рассылки: выбери действие.\n"
+        f"Аудитория рассылок: {audience_size}"
+    )
 
 
 def admin_broadcasts_list_title() -> str:

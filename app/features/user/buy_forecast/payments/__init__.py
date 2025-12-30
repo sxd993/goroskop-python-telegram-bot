@@ -4,7 +4,6 @@ from pathlib import Path
 from aiogram import Bot, F, Router
 from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
 
-from app.config import PRICE_KOPEKS_BY_KIND
 from app import texts
 from app.config import SIGNS_RU
 from app.features.user.dependencies import ensure_user, get_db_path, get_settings
@@ -13,6 +12,7 @@ from ..reviews import prompt_review
 from app.services import db, media, payments, state_machine
 from app.services.messaging import send_content, send_message_safe
 from app.services.payments import PaymentStatus
+from app.services.pricing import get_price_kopeks
 from app.services.parsing import (
     parse_invoice_payload,
     parse_pay_data,
@@ -45,7 +45,7 @@ async def send_invoice(callback: CallbackQuery, product_id: str, order_id: str) 
         await callback.message.answer(texts.invalid_product())
         return
     title, description = _build_invoice_title_description(parsed)
-    amount_kopeks = PRICE_KOPEKS_BY_KIND[parsed["kind"]]
+    amount_kopeks = get_price_kopeks(parsed["kind"], pricing_path=settings.pricing_path)
     prices = [LabeledPrice(label="Гороскоп", amount=amount_kopeks)]
     payload = f"{product_id}|{callback.from_user.id}|{order_id}"
     await callback.message.answer_invoice(
@@ -93,7 +93,7 @@ async def handle_pay(callback: CallbackQuery):
     if not content_path:
         await callback.message.answer(texts.content_missing())
         return
-    amount_kopeks = PRICE_KOPEKS_BY_KIND[parsed["kind"]]
+    amount_kopeks = get_price_kopeks(parsed["kind"], pricing_path=settings.pricing_path)
     order = await db.create_order(db_path, callback.from_user.id, product_id, amount_kopeks, settings.currency)
     try:
         await state_machine.set_order_initiated(db_path, callback.from_user.id, order["id"])

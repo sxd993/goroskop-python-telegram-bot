@@ -59,8 +59,10 @@ async def handle_broadcasts_menu(callback: CallbackQuery, state: FSMContext):
 
     await state.clear()
     await callback.answer()
+    db_path = get_settings(callback.bot).db_path
+    audience_size = len(await db.fetch_paid_user_ids(db_path))
     await callback.message.answer(
-        texts.admin_broadcasts_menu(),
+        texts.admin_broadcasts_menu(audience_size),
         reply_markup=build_broadcasts_menu_keyboard(),
     )
 

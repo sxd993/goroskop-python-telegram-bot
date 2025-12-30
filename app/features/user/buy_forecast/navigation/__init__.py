@@ -3,7 +3,6 @@ import logging
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
 
-from app.config import PRICE_KOPEKS_BY_KIND
 from app import texts
 from app.features.user.dependencies import get_settings
 from app.features.user.keyboards import (
@@ -15,6 +14,7 @@ from app.features.user.keyboards import (
     build_years_keyboard,
 )
 from app.services import media
+from app.services.pricing import get_price_kopeks
 from app.services.parsing import (
     parse_layout_choice,
     parse_month_data,
@@ -172,7 +172,7 @@ async def handle_month_sign(callback: CallbackQuery):
         await callback.message.answer(texts.invalid_product())
         return
     month_name = media.month_name_from_ym(ym) or ym
-    price_rub = PRICE_KOPEKS_BY_KIND["month"] / 100
+    price_rub = get_price_kopeks("month", pricing_path=settings.pricing_path) / 100
     text = texts.price_caption_month(month_name, ym.split("-")[0], sign, price_rub)
     back_cb = f"back:m-signs:{ym}"
     await _edit_or_send(callback.message, text, reply_markup=build_pay_keyboard(product_id, back=back_cb))
@@ -259,7 +259,7 @@ async def handle_year_sign(callback: CallbackQuery):
     if not product_id:
         await callback.message.answer(texts.invalid_product())
         return
-    price_rub = PRICE_KOPEKS_BY_KIND["year"] / 100
+    price_rub = get_price_kopeks("year", pricing_path=settings.pricing_path) / 100
     text = texts.price_caption_year(year, sign, price_rub)
     back_cb = f"back:y-signs:{year}"
     await _edit_or_send(callback.message, text, reply_markup=build_pay_keyboard(product_id, back=back_cb))
