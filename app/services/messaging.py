@@ -17,12 +17,12 @@ logger = logging.getLogger(__name__)
 TelegramCall = Callable[[], Awaitable[object]]
 
 
-async def send_with_retry(call: TelegramCall, *, attempts: int = 3, base_delay: float = 1.0) -> None:
+async def send_with_retry(call: TelegramCall, *, attempts: int = 3, base_delay: float = 1.0) -> object:
     last_exc: Optional[Exception] = None
     for attempt in range(1, attempts + 1):
         try:
-            await call()
-            return
+            result = await call()
+            return result
         except TelegramRetryAfter as exc:
             delay = max(base_delay * attempt, exc.retry_after)
             logger.warning("Telegram rate limit (429). retry_in=%s", delay)
@@ -87,10 +87,9 @@ async def send_contents(bot: Bot, chat_id: int, paths: list[Path], caption: str)
     return True
 
 
-async def send_message_safe(bot: Bot, chat_id: int, text: str, **kwargs) -> bool:
+async def send_message_safe(bot: Bot, chat_id: int, text: str, **kwargs) -> Optional[object]:
     try:
-        await send_with_retry(lambda: bot.send_message(chat_id, text, **kwargs))
-        return True
+        return await send_with_retry(lambda: bot.send_message(chat_id, text, **kwargs))
     except Exception:
         logger.exception("Failed to send message to chat=%s", chat_id)
-        return False
+        return None
