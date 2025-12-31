@@ -3,10 +3,12 @@
   "timezone_offset_hours": 5,
   "prices": {
     "month": {
-      "default_kopeks": 50000
+      "default_kopeks": 50000,
+      "promo_discount_kopeks": 10000
     },
     "year": {
       "default_kopeks": 99900,
+      "promo_discount_kopeks": 30000,
       "rules": [
         {
           "type": "window",

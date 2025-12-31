@@ -20,6 +20,7 @@ def get_price_kopeks(
     *,
     pricing_path: Path,
     now: dt.datetime | None = None,
+    apply_promo: bool = False,
 ) -> int:
     data = _load_pricing(pricing_path)
     tz_name = data.get("timezone") or "Europe/Moscow"
@@ -33,6 +34,7 @@ def get_price_kopeks(
     current = now.astimezone(tz) if now else dt.datetime.now(tz=tz)
     price_block = (data.get("prices") or {}).get(kind) or {}
     default_kopeks = int(price_block.get("default_kopeks") or 0)
+    base_price = default_kopeks
     for rule in price_block.get("rules") or []:
         rule_type = rule.get("type")
         if not rule_type:
@@ -41,13 +43,20 @@ def get_price_kopeks(
             start = _parse_datetime(rule["start"], tz)
             end = _parse_datetime(rule["end"], tz)
             if start <= current < end:
-                return int(rule["price_kopeks"])
+                base_price = int(rule["price_kopeks"])
+                break
         elif rule_type == "from":
             start = _parse_datetime(rule["start"], tz)
             if current >= start:
-                return int(rule["price_kopeks"])
+                base_price = int(rule["price_kopeks"])
+                break
         elif rule_type == "until":
             end = _parse_datetime(rule["end"], tz)
             if current < end:
-                return int(rule["price_kopeks"])
-    return default_kopeks
+                base_price = int(rule["price_kopeks"])
+                break
+    final_price = base_price
+    if apply_promo:
+        discount = int(price_block.get("promo_discount_kopeks") or 0)
+        final_price = max(0, final_price - discount)
+    return final_price

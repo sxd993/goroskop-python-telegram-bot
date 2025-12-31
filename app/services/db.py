@@ -5,7 +5,17 @@ from typing import Optional
 
 import aiosqlite
 
-from app.models import Campaign, CampaignAudience, CampaignResponse, Order, Payment, Review, User
+from app.models import (
+    Campaign,
+    CampaignAudience,
+    CampaignResponse,
+    Order,
+    Payment,
+    PromoCode,
+    PromoCodeUse,
+    Review,
+    User,
+)
 
 
 CREATE_TABLE_SQL = """
@@ -104,6 +114,39 @@ CREATE TABLE IF NOT EXISTS campaign_responses (
 );
 """
 
+CREATE_PROMOCODES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS promocodes (
+    code TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL UNIQUE,
+    paid_referrals INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+CREATE_PROMOCODE_USES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS promocode_uses (
+    order_id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    promo_code TEXT,
+    referrer_user_id INTEGER,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    applied_at TEXT,
+    FOREIGN KEY(order_id) REFERENCES orders(id),
+    FOREIGN KEY(promo_code) REFERENCES promocodes(code)
+);
+"""
+
+CREATE_PROMOCODE_INTENTS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS promocode_intents (
+    user_id INTEGER PRIMARY KEY,
+    promo_code TEXT NOT NULL,
+    referrer_user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
 
 def _now_iso() -> str:
     return dt.datetime.utcnow().isoformat()
@@ -157,6 +200,9 @@ async def init_db(db_path: Path) -> None:
         await _ensure_campaigns_table(db)
         await db.execute(CREATE_CAMPAIGN_AUDIENCE_SQL)
         await db.execute(CREATE_CAMPAIGN_RESPONSES_SQL)
+        await db.execute(CREATE_PROMOCODES_TABLE_SQL)
+        await db.execute(CREATE_PROMOCODE_USES_TABLE_SQL)
+        await db.execute(CREATE_PROMOCODE_INTENTS_TABLE_SQL)
         await db.commit()
 
 
@@ -241,6 +287,19 @@ async def update_status(db_path: Path, order_id: str, status: str) -> None:
 
 async def mark_invoice_sent(db_path: Path, order_id: str) -> None:
     await update_status(db_path, order_id, "invoice_sent")
+
+
+async def update_order_amount(db_path: Path, order_id: str, amount_kopeks: int) -> None:
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            UPDATE orders
+            SET amount_kopeks = ?
+            WHERE id = ?
+            """,
+            (amount_kopeks, order_id),
+        )
+        await db.commit()
 
 
 async def mark_paid(
@@ -703,6 +762,269 @@ async def update_payment_status(db_path: Path, provider_tx_id: str, status: str)
             WHERE provider_tx_id = ?
             """,
             (status, now, provider_tx_id),
+        )
+        await db.commit()
+
+
+# === Promo codes ===
+
+
+async def get_promocode_by_user(db_path: Path, user_id: int) -> Optional[PromoCode]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM promocodes WHERE user_id = ?",
+            (user_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return PromoCode(dict(row)) if row else None
+
+
+async def get_promocode_by_code(db_path: Path, code: str) -> Optional[PromoCode]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM promocodes WHERE code = ?",
+            (code,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return PromoCode(dict(row)) if row else None
+
+
+async def create_promocode(db_path: Path, user_id: int, code: str) -> PromoCode:
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            INSERT INTO promocodes (code, user_id, paid_referrals, created_at, updated_at)
+            VALUES (?, ?, 0, ?, ?)
+            """,
+            (code, user_id, now, now),
+        )
+        await db.commit()
+    return {
+        "code": code,
+        "user_id": user_id,
+        "paid_referrals": 0,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+async def increment_promocode_paid_referrals(db_path: Path, code: str) -> None:
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            UPDATE promocodes
+            SET paid_referrals = paid_referrals + 1,
+                updated_at = ?
+            WHERE code = ?
+            """,
+            (now, code),
+        )
+        await db.commit()
+
+
+async def get_promocode_use(db_path: Path, order_id: str) -> Optional[PromoCodeUse]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM promocode_uses WHERE order_id = ?",
+            (order_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return PromoCodeUse(dict(row)) if row else None
+
+
+async def get_promocode_use_for_user(
+    db_path: Path,
+    user_id: int,
+    status: str,
+) -> Optional[PromoCodeUse]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT *
+            FROM promocode_uses
+            WHERE user_id = ? AND status = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (user_id, status),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return PromoCodeUse(dict(row)) if row else None
+
+
+async def has_applied_promocode_use(db_path: Path, user_id: int) -> bool:
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            """
+            SELECT 1
+            FROM promocode_uses
+            WHERE user_id = ? AND status = 'applied'
+            LIMIT 1
+            """,
+            (user_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row is not None
+
+
+async def create_promocode_use(
+    db_path: Path,
+    order_id: str,
+    user_id: int,
+    status: str,
+    *,
+    promo_code: Optional[str] = None,
+    referrer_user_id: Optional[int] = None,
+) -> PromoCodeUse:
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            INSERT OR REPLACE INTO promocode_uses (
+                order_id, user_id, promo_code, referrer_user_id, status, created_at, applied_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, NULL)
+            """,
+            (order_id, user_id, promo_code, referrer_user_id, status, now),
+        )
+        await db.commit()
+    return {
+        "order_id": order_id,
+        "user_id": user_id,
+        "promo_code": promo_code,
+        "referrer_user_id": referrer_user_id,
+        "status": status,
+        "created_at": now,
+        "applied_at": None,
+    }
+
+
+async def update_promocode_use(
+    db_path: Path,
+    order_id: str,
+    *,
+    promo_code: Optional[str],
+    referrer_user_id: Optional[int],
+    status: str,
+) -> None:
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            UPDATE promocode_uses
+            SET promo_code = ?,
+                referrer_user_id = ?,
+                status = ?
+            WHERE order_id = ?
+            """,
+            (promo_code, referrer_user_id, status, order_id),
+        )
+        await db.commit()
+
+
+async def delete_promocode_use(db_path: Path, order_id: str) -> None:
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "DELETE FROM promocode_uses WHERE order_id = ?",
+            (order_id,),
+        )
+        await db.commit()
+
+
+async def clear_promocode_uses_for_user(
+    db_path: Path,
+    user_id: int,
+    statuses: list[str],
+) -> None:
+    placeholders = ",".join("?" for _ in statuses)
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            f"DELETE FROM promocode_uses WHERE user_id = ? AND status IN ({placeholders})",
+            (user_id, *statuses),
+        )
+        await db.commit()
+
+
+async def apply_promocode_use(db_path: Path, order_id: str) -> bool:
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT * FROM promocode_uses
+            WHERE order_id = ? AND status = 'pending' AND promo_code IS NOT NULL
+            """,
+            (order_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return False
+            use = PromoCodeUse(dict(row))
+        await db.execute(
+            """
+            UPDATE promocodes
+            SET paid_referrals = paid_referrals + 1,
+                updated_at = ?
+            WHERE code = ?
+            """,
+            (now, use["promo_code"]),
+        )
+        await db.execute(
+            """
+            UPDATE promocode_uses
+            SET status = 'applied',
+                applied_at = ?
+            WHERE order_id = ? AND status = 'pending'
+            """,
+            (now, order_id),
+        )
+        await db.commit()
+    return True
+
+
+async def upsert_promocode_intent(
+    db_path: Path,
+    user_id: int,
+    promo_code: str,
+    referrer_user_id: int,
+) -> None:
+    now = _now_iso()
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            INSERT INTO promocode_intents (user_id, promo_code, referrer_user_id, created_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                promo_code = excluded.promo_code,
+                referrer_user_id = excluded.referrer_user_id,
+                created_at = excluded.created_at
+            """,
+            (user_id, promo_code, referrer_user_id, now),
+        )
+        await db.commit()
+
+
+async def get_promocode_intent(db_path: Path, user_id: int) -> Optional[dict]:
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM promocode_intents WHERE user_id = ?",
+            (user_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+
+async def delete_promocode_intent(db_path: Path, user_id: int) -> None:
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "DELETE FROM promocode_intents WHERE user_id = ?",
+            (user_id,),
         )
         await db.commit()
 

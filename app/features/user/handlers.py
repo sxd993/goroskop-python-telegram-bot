@@ -8,10 +8,12 @@ from .buy_forecast.navigation import router as navigation_router
 from .buy_forecast.payments import router as payments_router
 from .buy_forecast.campaigns import router as campaigns_router
 from .buy_forecast.reviews import handle_review_text, router as reviews_router
+from .referral import router as referral_router
 from .support import handle_support, router as support_router
 
 router = Router()
 router.include_router(menu_router)
+router.include_router(referral_router)
 router.include_router(support_router)
 router.include_router(navigation_router)
 router.include_router(payments_router)
@@ -37,4 +39,5 @@ __all__ = [
     "payments_router",
     "reviews_router",
     "support_router",
+    "referral_router",
 ]

@@ -75,3 +75,21 @@ class CampaignResponse(TypedDict):
     status: str
     created_at: str
     updated_at: str
+
+
+class PromoCode(TypedDict):
+    code: str
+    user_id: int
+    paid_referrals: int
+    created_at: str
+    updated_at: str
+
+
+class PromoCodeUse(TypedDict):
+    order_id: str
+    user_id: int
+    promo_code: Optional[str]
+    referrer_user_id: Optional[int]
+    status: str
+    created_at: str
+    applied_at: Optional[str]

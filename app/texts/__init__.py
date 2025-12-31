@@ -21,6 +21,55 @@ def no_content() -> str:
     return "Контент пока не готов. Загляни позже."
 
 
+def referral_link_message(code: str, link: str | None, paid_referrals: int) -> str:
+    if link:
+        return (
+            "Твоя реферальная ссылка, которой ты можешь поделиться с друзьями:\n"
+            f"{link}\n\n"
+            "Твой пригласительный код, который твой друг должен ввести перед покупкой.:\n"
+            f"{code}\n\n"
+            "Оплативших по твоему коду:\n"
+            f"{paid_referrals}"
+        )
+    return (
+        "Твой пригласительный код:\n"
+        f"{code}\n\n"
+        "Оплативших по твоему коду:\n"
+        f"{paid_referrals}"
+    )
+
+
+def referral_prompt() -> str:
+    return (
+        "Вы пришли по рекомендации?\n"
+        "Если да — нажмите «Да» и введите пригласительный код."
+    )
+
+
+def referral_code_request() -> str:
+    return "Введите пригласительный код."
+
+
+def referral_code_invalid() -> str:
+    return "Код не найден. Проверьте и попробуйте еще раз."
+
+
+def referral_code_self() -> str:
+    return "Нельзя использовать свой собственный код."
+
+
+def referral_code_already_used() -> str:
+    return "Вы уже использовали пригласительный код. Оформляем без скидки."
+
+
+def referral_code_saved() -> str:
+    return "Код сохранен. Скидка применится при оплате."
+
+
+def referral_code_invalid_start() -> str:
+    return "Код из ссылки не найден. Скидка не применена."
+
+
 def invalid_year() -> str:
     return "Некорректный год."
 

@@ -13,6 +13,7 @@ from app.config import SIGNS_RU
 from app.menu_labels import (
     ADMIN_PANEL_LABEL,
     BUY_FORECAST_LABEL,
+    REFERRAL_LABEL,
     SUPPORT_LABEL,
 )
 from app.services import media
@@ -39,6 +40,7 @@ SIGN_EMOJI = {
 def build_start_keyboard(*, is_admin: bool) -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text=BUY_FORECAST_LABEL)],
+        [KeyboardButton(text=REFERRAL_LABEL)],
         [KeyboardButton(text=SUPPORT_LABEL)],
     ]
     if is_admin:
@@ -123,6 +125,27 @@ def build_pay_keyboard(
     if back:
         buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=back)])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def build_referral_prompt_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Да", callback_data=f"referral:yes:{order_id}"),
+                InlineKeyboardButton(text="❌ Нет", callback_data=f"referral:no:{order_id}"),
+            ],
+        ]
+    )
+
+
+def build_referral_skip_keyboard(order_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⏭️ Пропустить", callback_data=f"referral:skip:{order_id}"),
+            ],
+        ]
+    )
 
 
 def build_review_keyboard(order_id: str) -> InlineKeyboardMarkup:

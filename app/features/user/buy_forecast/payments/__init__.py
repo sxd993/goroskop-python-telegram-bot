@@ -7,7 +7,11 @@ from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
 from app import texts
 from app.config import SIGNS_RU
 from app.features.user.dependencies import ensure_user, get_db_path, get_settings
-from app.features.user.keyboards import build_review_cancel_keyboard
+from app.features.user.keyboards import (
+    build_referral_prompt_keyboard,
+    build_referral_skip_keyboard,
+    build_review_cancel_keyboard,
+)
 from ..reviews import prompt_review
 from app.services import db, media, payments, state_machine
 from app.services.messaging import send_contents, send_message_safe
@@ -38,17 +42,29 @@ def _build_invoice_title_description(parsed: dict) -> tuple[str, str]:
     return title, description
 
 
-async def send_invoice(callback: CallbackQuery, product_id: str, order_id: str) -> None:
-    settings = get_settings(callback.bot)
+def _parse_referral_callback(data: str) -> tuple[str, str] | None:
+    parts = data.split(":", maxsplit=2)
+    if len(parts) != 3 or parts[0] != "referral":
+        return None
+    return parts[1], parts[2]
+
+
+async def send_invoice(
+    message: Message,
+    user_id: int,
+    product_id: str,
+    order_id: str,
+    amount_kopeks: int,
+) -> None:
+    settings = get_settings(message.bot)
     parsed = parse_product(product_id)
     if not parsed:
-        await callback.message.answer(texts.invalid_product())
+        await message.answer(texts.invalid_product())
         return
     title, description = _build_invoice_title_description(parsed)
-    amount_kopeks = get_price_kopeks(parsed["kind"], pricing_path=settings.pricing_path)
     prices = [LabeledPrice(label="Гороскоп", amount=amount_kopeks)]
-    payload = f"{product_id}|{callback.from_user.id}|{order_id}"
-    await callback.message.answer_invoice(
+    payload = f"{product_id}|{user_id}|{order_id}"
+    await message.answer_invoice(
         title=title,
         description=description,
         payload=payload,
@@ -56,7 +72,39 @@ async def send_invoice(callback: CallbackQuery, product_id: str, order_id: str) 
         currency=settings.currency,
         prices=prices,
     )
-    logger.info("Invoice sent user=%s payload=%s", callback.from_user.id, payload)
+    logger.info("Invoice sent user=%s payload=%s", user_id, payload)
+
+
+async def _start_payment_for_order(message: Message, *, product_id: str, order_id: str, user_id: int) -> None:
+    db_path = get_db_path(message.bot)
+    parsed = parse_product(product_id)
+    if not parsed:
+        await message.answer(texts.invalid_product())
+        return
+    promo_use = await db.get_promocode_use(db_path, order_id)
+    apply_promo = bool(promo_use and promo_use["status"] == "pending" and promo_use["promo_code"])
+    amount_kopeks = get_price_kopeks(
+        parsed["kind"],
+        pricing_path=get_settings(message.bot).pricing_path,
+        apply_promo=apply_promo,
+    )
+    order = await db.get_order(db_path, order_id)
+    if order and order.get("amount_kopeks") != amount_kopeks:
+        await db.update_order_amount(db_path, order_id, amount_kopeks)
+    try:
+        await send_invoice(message, user_id, product_id, order_id, amount_kopeks)
+    except Exception:
+        logger.exception("Failed to send invoice order_id=%s user_id=%s", order_id, user_id)
+        await state_machine.ensure_idle(db_path, user_id)
+        await send_message_safe(message.bot, message.chat.id, texts.temporary_error())
+        return
+    await db.mark_invoice_sent(db_path, order_id)
+    try:
+        await state_machine.set_payment_pending(db_path, user_id, order_id)
+    except InvalidStateTransition:
+        logger.warning("Payment pending transition rejected user_id=%s order_id=%s", user_id, order_id)
+        await send_message_safe(message.bot, message.chat.id, texts.temporary_error())
+        await state_machine.ensure_idle(db_path, user_id)
 
 
 @router.callback_query(F.data.startswith("pay:"))
@@ -116,20 +164,136 @@ async def handle_pay(callback: CallbackQuery):
             )
             await send_message_safe(callback.bot, callback.message.chat.id, texts.temporary_error())
             return
-    try:
-        await send_invoice(callback, product_id, order["id"])
-    except Exception:
-        logger.exception("Failed to send invoice order_id=%s user_id=%s", order["id"], callback.from_user.id)
-        await state_machine.ensure_idle(db_path, callback.from_user.id)
-        await send_message_safe(callback.bot, callback.message.chat.id, texts.temporary_error())
+    intent = await db.get_promocode_intent(db_path, callback.from_user.id)
+    if intent:
+        await db.delete_promocode_intent(db_path, callback.from_user.id)
+        if await db.has_applied_promocode_use(db_path, callback.from_user.id):
+            await callback.message.answer(texts.referral_code_already_used())
+        else:
+            await db.create_promocode_use(
+                db_path,
+                order["id"],
+                callback.from_user.id,
+                "pending",
+                promo_code=intent["promo_code"],
+                referrer_user_id=intent["referrer_user_id"],
+            )
+            await callback.message.answer(texts.referral_code_saved())
+        await _start_payment_for_order(
+            callback.message,
+            product_id=order["product_id"],
+            order_id=order["id"],
+            user_id=callback.from_user.id,
+        )
         return
-    await db.mark_invoice_sent(db_path, order["id"])
-    try:
-        await state_machine.set_payment_pending(db_path, callback.from_user.id, order["id"])
-    except InvalidStateTransition:
-        logger.warning("Payment pending transition rejected user_id=%s order_id=%s", callback.from_user.id, order["id"])
-        await send_message_safe(callback.bot, callback.message.chat.id, texts.temporary_error())
-        await state_machine.ensure_idle(db_path, callback.from_user.id)
+    await db.clear_promocode_uses_for_user(
+        db_path,
+        callback.from_user.id,
+        statuses=["awaiting_code", "pending"],
+    )
+    await callback.message.answer(
+        texts.referral_prompt(),
+        reply_markup=build_referral_prompt_keyboard(order["id"]),
+    )
+
+
+@router.callback_query(F.data.startswith("referral:"))
+async def handle_referral_prompt(callback: CallbackQuery):
+    parsed = _parse_referral_callback(callback.data or "")
+    await callback.answer()
+    if not parsed:
+        await callback.message.answer(texts.invalid_choice())
+        return
+    action, order_id = parsed
+    db_path = get_db_path(callback.bot)
+    order = await db.get_order(db_path, order_id)
+    if not order or order["user_id"] != callback.from_user.id:
+        await callback.message.answer(texts.order_not_found())
+        return
+    if action == "no":
+        await db.delete_promocode_use(db_path, order_id)
+        await _start_payment_for_order(
+            callback.message,
+            product_id=order["product_id"],
+            order_id=order_id,
+            user_id=callback.from_user.id,
+        )
+        return
+    if action == "yes":
+        await db.create_promocode_use(db_path, order_id, callback.from_user.id, "awaiting_code")
+        await callback.message.answer(
+            texts.referral_code_request(),
+            reply_markup=build_referral_skip_keyboard(order_id),
+        )
+        return
+    if action == "skip":
+        await db.delete_promocode_use(db_path, order_id)
+        await _start_payment_for_order(
+            callback.message,
+            product_id=order["product_id"],
+            order_id=order_id,
+            user_id=callback.from_user.id,
+        )
+        return
+    await callback.message.answer(texts.invalid_choice())
+
+
+@router.message(F.text)
+async def handle_referral_code(message: Message):
+    if not message.from_user:
+        return
+    db_path = get_db_path(message.bot)
+    pending = await db.get_promocode_use_for_user(db_path, message.from_user.id, "awaiting_code")
+    if not pending:
+        return
+    order = await db.get_order(db_path, pending["order_id"])
+    if not order or order["user_id"] != message.from_user.id:
+        await db.delete_promocode_use(db_path, pending["order_id"])
+        await message.answer(texts.order_not_found())
+        return
+    if await db.has_applied_promocode_use(db_path, message.from_user.id):
+        await db.delete_promocode_use(db_path, pending["order_id"])
+        await message.answer(texts.referral_code_already_used())
+        await _start_payment_for_order(
+            message,
+            product_id=order["product_id"],
+            order_id=order["id"],
+            user_id=message.from_user.id,
+        )
+        return
+    code = (message.text or "").strip().upper()
+    if not code:
+        await message.answer(
+            texts.referral_code_invalid(),
+            reply_markup=build_referral_skip_keyboard(pending["order_id"]),
+        )
+        return
+    promo = await db.get_promocode_by_code(db_path, code)
+    if not promo:
+        await message.answer(
+            texts.referral_code_invalid(),
+            reply_markup=build_referral_skip_keyboard(pending["order_id"]),
+        )
+        return
+    if promo["user_id"] == message.from_user.id:
+        await message.answer(
+            texts.referral_code_self(),
+            reply_markup=build_referral_skip_keyboard(pending["order_id"]),
+        )
+        return
+    await db.update_promocode_use(
+        db_path,
+        pending["order_id"],
+        promo_code=promo["code"],
+        referrer_user_id=promo["user_id"],
+        status="pending",
+    )
+    await _start_payment_for_order(
+        message,
+        product_id=order["product_id"],
+        order_id=order["id"],
+        user_id=message.from_user.id,
+    )
 
 
 @router.pre_checkout_query()
@@ -283,6 +447,11 @@ async def handle_successful_payment(message: Message):
         except InvalidStateTransition:
             logger.warning("Unexpected paid transition user_id=%s order_id=%s", message.from_user.id, order_id)
     order = await db.get_order(db_path, order_id) or order
+    applied_referral = False
+    if order.get("status") == "paid":
+        applied_referral = await db.apply_promocode_use(db_path, order_id)
+    if applied_referral:
+        logger.info("Referral applied order_id=%s", order_id)
     logger.info(
         "Payment successful user=%s order_id=%s payload=%s charge_id=%s",
         message.from_user.id,
