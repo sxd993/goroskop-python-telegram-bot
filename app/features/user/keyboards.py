@@ -215,3 +215,15 @@ def build_campaign_interest_keyboard(campaign_id: str) -> InlineKeyboardMarkup:
     )
 
 
+def build_referral_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🔗 Ссылка", callback_data="referral:link"),
+                InlineKeyboardButton(text="🏷️ Код", callback_data="referral:code"),
+                InlineKeyboardButton(text="📊 Статистика", callback_data="referral:stats"),
+            ],
+        ]
+    )
+
+

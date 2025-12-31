@@ -45,6 +45,41 @@ def referral_link_message(code: str, link: str | None, paid_referrals: int) -> s
     )
 
 
+def referral_menu() -> str:
+    return (
+        "Реферальное меню:\n\n"
+        "1) Ссылка — поделись с другом, скидка применится автоматически.\n"
+        "2) Код — если друг вводит вручную перед покупкой.\n"
+        "3) Статистика — сколько оплатили по твоему коду."
+    )
+
+
+def referral_link_only_message(link: str | None) -> str:
+    if link:
+        return (
+            "Твоя реферальная ссылка:\n"
+            f"{link}\n\n"
+            "Скидка для друга:\n"
+            "100 ₽ на месячный прогноз\n"
+            "300 ₽ на годовой прогноз"
+        )
+    return "Не удалось получить ссылку."
+
+
+def referral_code_only_message(code: str) -> str:
+    return (
+        "Твой пригласительный код:\n"
+        f"{code}"
+    )
+
+
+def referral_stats_message(paid_referrals: int) -> str:
+    return (
+        "Оплативших по твоему коду:\n"
+        f"{paid_referrals}"
+    )
+
+
 def referral_prompt() -> str:
     return (
         "Вы пришли по рекомендации?\n"
