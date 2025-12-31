@@ -22,16 +22,22 @@ def no_content() -> str:
 
 
 def referral_link_message(code: str, link: str | None, paid_referrals: int) -> str:
+    discount_note = (
+        "Скидка для друга:\n"
+        "300 ₽ на годовой прогноз\n\n"
+    )
     if link:
         return (
             "Твоя реферальная ссылка, которой ты можешь поделиться с друзьями:\n"
             f"{link}\n\n"
-            "Твой пригласительный код, который твой друг должен ввести перед покупкой.:\n"
+            f"{discount_note}"
+            "Твой пригласительный код, который твой друг должен ввести перед покупкой:\n"
             f"{code}\n\n"
             "Оплативших по твоему коду:\n"
             f"{paid_referrals}"
         )
     return (
+        f"{discount_note}"
         "Твой пригласительный код:\n"
         f"{code}\n\n"
         "Оплативших по твоему коду:\n"
