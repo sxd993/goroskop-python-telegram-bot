@@ -4,7 +4,7 @@
   "prices": {
     "month": {
       "default_kopeks": 50000,
-      "promo_discount_kopeks": 10000
+      "promo_discount_kopeks": 0
     },
     "year": {
       "default_kopeks": 99900,
