@@ -1,8 +1,10 @@
 import asyncio
 import logging
 import secrets
+import time
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -30,12 +32,13 @@ from app.features.admin.keyboards import (
 from app.features.admin.states import AdminBroadcastCreate
 from app.features.user.keyboards import build_campaign_interest_keyboard
 from app.services import db
-from app.services.messaging import send_message_safe
+from app.services.messaging import send_with_retry
 
 logger = logging.getLogger(__name__)
 
 router = Router()
 
+DEFAULT_BROADCAST_DELAY_SECONDS = 0.5
 
 _campaign_token_map: dict[str, str] = {}
 _campaign_token_reverse: dict[str, str] = {}
@@ -372,22 +375,40 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
         texts.admin_broadcast_launch_repeat_ack() if already_launched else texts.admin_broadcast_launch_ack()
     )
+    delay_seconds = DEFAULT_BROADCAST_DELAY_SECONDS
 
     async def _send():
         sent = failed = 0
         interested = declined = 0
+        total = len(audience)
+        started_at = time.monotonic()
+        logger.info(
+            "Broadcast start campaign_id=%s audience=%s delay=%.2fs",
+            campaign_id,
+            total,
+            delay_seconds,
+        )
 
-        for user_id in audience:
+        for index, user_id in enumerate(audience, start=1):
             if status_map.get(user_id) in {"interested", "declined"}:
+                logger.info(
+                    "Broadcast skip user_id=%s campaign_id=%s status=%s index=%s/%s",
+                    user_id,
+                    campaign_id,
+                    status_map.get(user_id),
+                    index,
+                    total,
+                )
                 continue
             try:
                 text = texts.campaign_offer(campaign["body"])
 
-                msg = await send_message_safe(
-                    callback.bot,
-                    user_id,
-                    text,
-                    reply_markup=build_campaign_interest_keyboard(campaign_id),
+                msg = await send_with_retry(
+                    lambda: callback.bot.send_message(
+                        user_id,
+                        text,
+                        reply_markup=build_campaign_interest_keyboard(campaign_id),
+                    )
                 )
 
                 message_id = getattr(msg, "message_id", None)
@@ -402,6 +423,14 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
                         message_id=message_id,
                     )
                     status_map[user_id] = "sent"
+                    logger.info(
+                        "Broadcast sent user_id=%s campaign_id=%s message_id=%s index=%s/%s",
+                        user_id,
+                        campaign_id,
+                        message_id,
+                        index,
+                        total,
+                    )
                 else:
                     failed += 1
                     await db.update_campaign_audience_status(
@@ -412,7 +441,31 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
                         error="Delivery failed",
                     )
                     status_map[user_id] = "failed"
+                    logger.warning(
+                        "Broadcast failed user_id=%s campaign_id=%s reason=no_message_id index=%s/%s",
+                        user_id,
+                        campaign_id,
+                        index,
+                        total,
+                    )
 
+            except TelegramForbiddenError:
+                failed += 1
+                await db.update_campaign_audience_status(
+                    db_path,
+                    campaign_id,
+                    user_id,
+                    "failed",
+                    error="blocked_by_user",
+                )
+                status_map[user_id] = "failed"
+                logger.warning(
+                    "Broadcast blocked user_id=%s campaign_id=%s index=%s/%s",
+                    user_id,
+                    campaign_id,
+                    index,
+                    total,
+                )
             except Exception as exc:
                 logger.exception(
                     "Campaign send failed user_id=%s campaign_id=%s",
@@ -429,7 +482,7 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
                 )
                 status_map[user_id] = "failed"
 
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(delay_seconds)
 
         audience_rows = await db.get_campaign_audience(db_path, campaign_id)
         for row in audience_rows:
@@ -437,6 +490,16 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
                 interested += 1
             elif row["status"] == "declined":
                 declined += 1
+        duration = time.monotonic() - started_at
+        logger.info(
+            "Broadcast finished campaign_id=%s sent=%s failed=%s interested=%s declined=%s duration=%.2fs",
+            campaign_id,
+            sent,
+            failed,
+            interested,
+            declined,
+            duration,
+        )
 
     asyncio.create_task(_send())
 
