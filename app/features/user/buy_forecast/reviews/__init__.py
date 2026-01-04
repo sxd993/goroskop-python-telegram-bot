@@ -93,15 +93,7 @@ async def handle_review_contact_skip(message: Message):
     pending = await db.get_pending_review_for_user(db_path, message.from_user.id)
     if not pending:
         return
-    username = message.from_user.username
-    await db.update_review_contact(
-        db_path,
-        pending["order_id"],
-        message.from_user.id,
-        username=username,
-    )
-    await message.answer("Можно писать отзыв.", reply_markup=remove_keyboard())
-    await message.answer(texts.review_request(), reply_markup=build_review_cancel_keyboard())
+    await message.answer(texts.review_contact_request(), reply_markup=build_review_contact_keyboard())
 
 
 @router.callback_query(F.data.startswith("review:skip:"))
@@ -164,6 +156,9 @@ async def handle_review_text(message: Message):
         return
     pending = await db.get_pending_review_for_user(db_path, message.from_user.id)
     if not pending:
+        return
+    if not pending.get("contact_phone"):
+        await message.answer(texts.review_contact_request(), reply_markup=build_review_contact_keyboard())
         return
     if message.from_user.username:
         await db.update_review_contact(

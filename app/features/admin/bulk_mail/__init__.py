@@ -30,7 +30,6 @@ from app.features.admin.keyboards import (
     build_broadcasts_menu_keyboard,
 )
 from app.features.admin.states import AdminBroadcastCreate
-from app.features.user.keyboards import build_campaign_interest_keyboard
 from app.services import db
 from app.services.messaging import send_with_retry
 
@@ -235,16 +234,15 @@ async def handle_broadcast_stats(callback: CallbackQuery, state: FSMContext):
 
     stats = await db.fetch_campaign_audience_stats(db_path, campaign_id)
     delivered = sum(stats.get(key, 0) for key in ("sent", "interested", "declined"))
-    interested = stats.get("interested", 0)
-    declined = stats.get("declined", 0)
+    total = sum(stats.values())
+    not_delivered = max(0, total - delivered)
 
     await callback.answer()
     await callback.message.answer(
         texts.admin_broadcast_stats_summary(
             campaign["title"],
             delivered,
-            interested,
-            declined,
+            not_delivered,
         ),
         reply_markup=build_broadcast_stats_keyboard(campaign_id),
     )
@@ -306,22 +304,9 @@ async def handle_broadcast_body(message: Message, state: FSMContext):
         return
 
     await state.update_data(body=message.text or "")
-    await state.set_state(AdminBroadcastCreate.interest_text)
-    await message.answer(texts.admin_broadcast_prompt_interest_redirect())
-
-
-@router.message(AdminBroadcastCreate.interest_text)
-async def handle_broadcast_interest_text(message: Message, state: FSMContext):
-    if not _ensure_admin(message):
-        await state.clear()
-        await message.answer(texts.admin_forbidden())
-        return
-
-    await state.update_data(interest_text=message.text or "")
     data = await state.get_data()
     title = data.get("title", "").strip() or "Без названия"
     body_text = data.get("body", "").strip() or ""
-    interest_text = data.get("interest_text", "").strip()
 
     await state.clear()
 
@@ -330,7 +315,7 @@ async def handle_broadcast_interest_text(message: Message, state: FSMContext):
         title,
         body_text,
         0,
-        interest_text,
+        "",
     )
 
     await message.answer(
@@ -407,7 +392,6 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
                     lambda: callback.bot.send_message(
                         user_id,
                         text,
-                        reply_markup=build_campaign_interest_keyboard(campaign_id),
                     )
                 )
 
