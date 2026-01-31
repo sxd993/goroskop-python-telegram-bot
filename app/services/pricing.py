@@ -19,6 +19,7 @@ def get_price_kopeks(
     kind: str,
     *,
     pricing_path: Path,
+    ym: str | None = None,
     now: dt.datetime | None = None,
     apply_promo: bool = False,
 ) -> int:
@@ -36,6 +37,13 @@ def get_price_kopeks(
     default_kopeks = int(price_block.get("default_kopeks") or 0)
     base_price = default_kopeks
     for rule in price_block.get("rules") or []:
+        if ym:
+            rule_ym = rule.get("ym")
+            rule_months = rule.get("months")
+            if rule_ym and rule_ym != ym:
+                continue
+            if rule_months and ym not in rule_months:
+                continue
         rule_type = rule.get("type")
         if not rule_type:
             rule_type = "window" if rule.get("end") else "from"

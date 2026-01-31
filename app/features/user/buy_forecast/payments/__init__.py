@@ -83,9 +83,13 @@ async def _start_payment_for_order(message: Message, *, product_id: str, order_i
         return
     promo_use = await db.get_promocode_use(db_path, order_id)
     apply_promo = bool(promo_use and promo_use["status"] == "pending" and promo_use["promo_code"])
+    ym = None
+    if parsed["kind"] == "month" and parsed["month"]:
+        ym = f"{parsed['year']}-{parsed['month']}"
     amount_kopeks = get_price_kopeks(
         parsed["kind"],
         pricing_path=get_settings(message.bot).pricing_path,
+        ym=ym,
         apply_promo=apply_promo,
     )
     order = await db.get_order(db_path, order_id)
@@ -141,7 +145,10 @@ async def handle_pay(callback: CallbackQuery):
     if not content_paths:
         await callback.message.answer(texts.content_missing())
         return
-    amount_kopeks = get_price_kopeks(parsed["kind"], pricing_path=settings.pricing_path)
+    ym = None
+    if parsed["kind"] == "month" and parsed["month"]:
+        ym = f"{parsed['year']}-{parsed['month']}"
+    amount_kopeks = get_price_kopeks(parsed["kind"], pricing_path=settings.pricing_path, ym=ym)
     order = await db.create_order(db_path, callback.from_user.id, product_id, amount_kopeks, settings.currency)
     try:
         await state_machine.set_order_initiated(db_path, callback.from_user.id, order["id"])

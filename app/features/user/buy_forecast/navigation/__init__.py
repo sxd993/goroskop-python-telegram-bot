@@ -172,7 +172,7 @@ async def handle_month_sign(callback: CallbackQuery):
         await callback.message.answer(texts.invalid_product())
         return
     month_name = media.month_name_from_ym(ym) or ym
-    price_rub = get_price_kopeks("month", pricing_path=settings.pricing_path) / 100
+    price_rub = get_price_kopeks("month", pricing_path=settings.pricing_path, ym=ym) / 100
     text = texts.price_caption_month(month_name, ym.split("-")[0], sign, price_rub)
     back_cb = f"back:m-signs:{ym}"
     await _edit_or_send(callback.message, text, reply_markup=build_pay_keyboard(product_id, back=back_cb))
