@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 
 from aiogram import Bot, F, Router
+from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
 
 from app import texts
@@ -248,11 +249,11 @@ async def handle_referral_prompt(callback: CallbackQuery):
 @router.message(F.text)
 async def handle_referral_code(message: Message):
     if not message.from_user:
-        return
+        raise SkipHandler()
     db_path = get_db_path(message.bot)
     pending = await db.get_promocode_use_for_user(db_path, message.from_user.id, "awaiting_code")
     if not pending:
-        return
+        raise SkipHandler()
     order = await db.get_order(db_path, pending["order_id"])
     if not order or order["user_id"] != message.from_user.id:
         await db.delete_promocode_use(db_path, pending["order_id"])
