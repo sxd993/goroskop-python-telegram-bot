@@ -53,12 +53,6 @@ async def edit_or_send(callback: CallbackQuery, text: str, reply_markup=None) ->
         await callback.message.answer(text, reply_markup=reply_markup)
 
 
-def review_destination_path(media_dir: Path, sign: str, extension: str) -> Path:
-    target_dir = media_dir / "reviews" / sign
-    target_dir.mkdir(parents=True, exist_ok=True)
-    return target_dir / f"{sign}.{extension}"
-
-
 def detect_extension(message: Message) -> Optional[str]:
     if message.document and message.document.file_name:
         parts = message.document.file_name.rsplit(".", maxsplit=1)

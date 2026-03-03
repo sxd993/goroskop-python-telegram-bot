@@ -7,6 +7,12 @@
       "promo_discount_kopeks": 0,
       "rules": [
         {
+          "type": "from",
+          "start": "2020-01-01 00:00",
+          "price_kopeks": 69000,
+          "ym": "2026-03"
+        },
+        {
           "type": "until",
           "end": "2026-01-31 00:00",
           "price_kopeks": 55500,

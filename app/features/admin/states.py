@@ -17,11 +17,6 @@ class AdminDelete(StatesGroup):
     confirm = State()
 
 
-class AdminReviewImage(StatesGroup):
-    sign = State()
-    file = State()
-
-
 class AdminBroadcastCreate(StatesGroup):
     title = State()
     body = State()

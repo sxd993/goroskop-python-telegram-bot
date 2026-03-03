@@ -24,7 +24,6 @@ ADMIN_ADD_FORECAST_CALLBACK = "admin:add_forecast"
 ADMIN_DELETE_FORECAST_CALLBACK = "admin:delete_forecast"
 ADMIN_STATS_CALLBACK = "admin:stats"
 ADMIN_REVIEWS_CALLBACK = "admin:reviews"
-ADMIN_REVIEW_IMAGE_CALLBACK = "admin:review_image"
 ADMIN_BROADCASTS_CALLBACK = "admin:broadcasts"
 ADMIN_BROADCAST_LIST_CALLBACK = "admin:broadcasts:list"
 ADMIN_BROADCAST_ITEM_PREFIX = "admin:broadcasts:item"
@@ -55,7 +54,6 @@ def build_admin_menu() -> InlineKeyboardMarkup:
     builder.button(text="🗑️ Удалить прогноз", callback_data=ADMIN_DELETE_FORECAST_CALLBACK)
     builder.button(text="📊 Статистика продаж", callback_data=ADMIN_STATS_CALLBACK)
     builder.button(text="💬 Отзывы", callback_data=ADMIN_REVIEWS_CALLBACK)
-    builder.button(text="🖼️ Картинки после отзывов", callback_data=ADMIN_REVIEW_IMAGE_CALLBACK)
     builder.button(text="📢 Рассылки", callback_data=ADMIN_BROADCASTS_CALLBACK)
     builder.adjust(1)
     return builder.as_markup()
