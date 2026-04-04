@@ -3,5 +3,5 @@ Window:
 $env:ENV_FILE=".env.test"; python app.py
 
 Mac:
-.venv/bin/activate
+source .venv/bin/activate
 ENV_FILE=.env.test python app.py

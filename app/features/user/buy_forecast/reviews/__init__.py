@@ -180,4 +180,3 @@ async def handle_review_text(message: Message):
     except InvalidStateTransition:
         logger.warning("Review submit transition blocked user_id=%s order_id=%s", message.from_user.id, pending["order_id"])
     await message.answer(texts.review_thanks(), reply_markup=remove_keyboard())
-    await message.answer(texts.review_money_ritual())
