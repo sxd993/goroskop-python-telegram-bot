@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     media_dir: Path = Field(Path("media"), alias="MEDIA_DIR")
     db_path: Path = Field(Path("data/bot.sqlite3"), alias="DB_PATH")
     pricing_path: Path = Field(Path("data/pricing.json"), alias="PRICING_PATH")
+    photo_after_review_dir: Path = Field(Path("data/photo-after-review"), alias="PHOTO_AFTER_REVIEW_DIR")
     admin_ids: List[int] = Field(default_factory=list, alias="ADMIN_IDS")
 
     model_config = SettingsConfigDict(
@@ -130,6 +131,7 @@ def load_settings() -> Settings:
     settings.media_dir = settings.media_dir.expanduser().resolve()
     settings.db_path = settings.db_path.expanduser().resolve()
     settings.pricing_path = settings.pricing_path.expanduser().resolve()
+    settings.photo_after_review_dir = settings.photo_after_review_dir.expanduser().resolve()
     return settings
 
 

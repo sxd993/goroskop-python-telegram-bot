@@ -426,7 +426,7 @@ def review_prompt() -> str:
 
 def review_request() -> str:
     return (
-        "Напиши отзыв (минимум 100 символов). Ответ увидим только мы.\n\n"
+        "Напиши отзыв (минимум 50 символов). Ответ увидим только мы.\n\n"
         "Если передумал(а) — нажми «Отмена»."
     )
 
@@ -517,9 +517,8 @@ def admin_review_detail(
     )
 
 
-def review_reward_caption(sign: str) -> str:
-    sign_name = SIGNS_RU.get(sign, sign)
-    return f"Твой бонус за отзыв. \nКартинка, которая работает как магнит для удачи и щит от негатива."
+def review_reward_caption() -> str:
+    return "Твой бонус за отзыв. \nКартинка, которая работает как магнит для удачи и щит от негатива."
 
 
 # === Broadcasts ===
