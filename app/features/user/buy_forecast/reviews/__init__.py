@@ -15,7 +15,6 @@ from app.features.user.keyboards import (
 )
 from app.services import db, media, state_machine
 from app.services.messaging import send_content, send_message_safe
-from app.services.parsing import parse_product
 from app.services.state_machine import InvalidStateTransition, UserState
 
 logger = logging.getLogger(__name__)
@@ -151,7 +150,7 @@ async def handle_review_text(message: Message):
     user_state = await state_machine.get_user_state(db_path, message.from_user.id)
     if user_state != UserState.REVIEW_PENDING:
         return
-    if len(review_text) < 100:
+    if len(review_text) < 50:
         await message.answer(texts.review_request(), reply_markup=build_review_cancel_keyboard())
         return
     pending = await db.get_pending_review_for_user(db_path, message.from_user.id)
@@ -168,12 +167,10 @@ async def handle_review_text(message: Message):
             username=message.from_user.username,
         )
     await db.mark_review_submitted(db_path, pending["order_id"], review_text)
-    parsed = parse_product(pending["product_id"])
-    if parsed:
-        reward_path = media.find_review_image(get_settings(message.bot).media_dir, parsed["sign"])
-        if reward_path:
-            caption = texts.review_reward_caption(parsed["sign"])
-            await send_content(message.bot, message.chat.id, reward_path, caption)
+    settings = get_settings(message.bot)
+    reward_path = media.find_photo_after_review(settings.photo_after_review_dir)
+    if reward_path:
+        await send_content(message.bot, message.chat.id, reward_path, texts.review_reward_caption())
     try:
         await state_machine.set_reviewed(db_path, message.from_user.id, pending["order_id"])
         await state_machine.ensure_idle(db_path, message.from_user.id)

@@ -8,9 +8,6 @@ from app.config import ALLOWED_EXTENSIONS, MONTH_NAMES_RU, SIGNS_RU, YEAR_MONTH_
 _YEAR_MONTH_REGEX = re.compile(YEAR_MONTH_PATTERN)
 _YEAR_DIRNAME = "year"
 _MONTH_DIRNAME = "month"
-_REVIEWS_DIRNAME = "reviews"
-
-
 def is_valid_year(value: str) -> bool:
     return bool(re.fullmatch(r"\d{4}", value))
 
@@ -119,44 +116,16 @@ def available_month_signs(media_dir: Path, ym: str) -> List[str]:
     return ordered + extras
 
 
-def find_review_image(media_dir: Path, sign: str) -> Optional[Path]:
-    if sign not in SIGNS_RU:
+def find_photo_after_review(dir_path: Path) -> Optional[Path]:
+    if not dir_path.is_dir():
         return None
-    target_dir = _root_dir(media_dir, _REVIEWS_DIRNAME)
-    if not target_dir.exists():
-        return None
-    for ext in ALLOWED_EXTENSIONS:
-        candidate = target_dir / f"{sign}.{ext}"
-        if candidate.is_file():
-            return candidate
-        nested = target_dir / sign / f"{sign}.{ext}"
-        if nested.is_file():
-            return nested
-        nested_any = next((p for p in (target_dir / sign).glob(f"*.{ext}") if p.is_file()), None)
-        if nested_any:
-            return nested_any
-    return None
-
-
-def save_review_image(media_dir: Path, sign: str, source_path: Path) -> bool:
-    if sign not in SIGNS_RU:
-        return False
-    ext = source_path.suffix.lower().lstrip(".")
-    if ext not in ALLOWED_EXTENSIONS:
-        return False
-    target_dir = _root_dir(media_dir, _REVIEWS_DIRNAME) / sign
-    target_dir.mkdir(parents=True, exist_ok=True)
-    destination = target_dir / f"{sign}.{ext}"
-    # remove other extensions
-    for allowed_ext in ALLOWED_EXTENSIONS:
-        candidate = destination.with_suffix(f".{allowed_ext}")
-        if candidate.exists():
-            candidate.unlink()
-    try:
-        source_path.replace(destination)
-        return True
-    except OSError:
-        return False
+    candidates: List[Path] = []
+    for path in sorted(dir_path.iterdir()):
+        if not path.is_file():
+            continue
+        if path.suffix.lower().lstrip(".") in ALLOWED_EXTENSIONS:
+            candidates.append(path)
+    return candidates[0] if candidates else None
 
 
 def _collect_content_paths(target_dir: Path, sign: str) -> List[Path]:
