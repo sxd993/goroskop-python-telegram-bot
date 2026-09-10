@@ -8,9 +8,10 @@ from app.services.state_machine import UserState
 
 
 class DummyMessage:
-    def __init__(self, bot, user_id: int):
+    def __init__(self, bot, user_id: int, text: str = "/start"):
         self.bot = bot
         self.from_user = type("obj", (), {"id": user_id})()
+        self.text = text
         self.answers: list[str] = []
 
     async def answer(self, text: str, **kwargs):

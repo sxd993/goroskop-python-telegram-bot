@@ -1090,15 +1090,9 @@ async def get_campaign(db_path: Path, campaign_id: str) -> Optional[Campaign]:
             return Campaign(dict(row)) if row else None
 
 
-async def fetch_paid_user_ids(db_path: Path) -> list[int]:
+async def fetch_all_user_ids(db_path: Path) -> list[int]:
     async with aiosqlite.connect(db_path) as db:
-        async with db.execute(
-            """
-            SELECT DISTINCT user_id
-            FROM orders
-            WHERE status = 'paid'
-            """
-        ) as cursor:
+        async with db.execute("SELECT user_id FROM users") as cursor:
             rows = await cursor.fetchall()
             return [int(row[0]) for row in rows]
 

@@ -39,6 +39,7 @@ router = Router()
 
 DEFAULT_BROADCAST_DELAY_SECONDS = 0.5
 
+_broadcast_tasks: set[asyncio.Task] = set()
 _campaign_token_map: dict[str, str] = {}
 _campaign_token_reverse: dict[str, str] = {}
 _response_token_map: dict[str, tuple[str, str]] = {}
@@ -64,7 +65,7 @@ async def handle_broadcasts_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.answer()
     db_path = get_settings(callback.bot).db_path
-    audience_size = len(await db.fetch_paid_user_ids(db_path))
+    audience_size = len(await db.fetch_all_user_ids(db_path))
     await callback.message.answer(
         texts.admin_broadcasts_menu(audience_size),
         reply_markup=build_broadcasts_menu_keyboard(),
@@ -343,11 +344,11 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
 
     already_launched = await db.campaign_has_audience(db_path, campaign_id)
 
-    audience = await db.fetch_paid_user_ids(db_path)
+    audience = await db.fetch_all_user_ids(db_path)
     if not audience:
         await callback.answer()
         await callback.message.answer(
-            "Нет аудитории с оплаченными заказами.",
+            "Нет пользователей для рассылки.",
             reply_markup=build_broadcasts_menu_keyboard(),
         )
         return
@@ -485,7 +486,9 @@ async def handle_broadcast_launch(callback: CallbackQuery, state: FSMContext):
             duration,
         )
 
-    asyncio.create_task(_send())
+    task = asyncio.create_task(_send())
+    _broadcast_tasks.add(task)
+    task.add_done_callback(_broadcast_tasks.discard)
 
 
 @router.callback_query(F.data.startswith(f"{ADMIN_BROADCAST_RESPONSES_PREFIX}:"))
